@@ -6,6 +6,8 @@ import { convertValue } from './utils/formatters';
 import { SummaryHeader } from './components/SummaryHeader';
 import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 export default function App() {
   const [rates, setRates] = useState<ExchangeRates>(INITIAL_RATES);
@@ -204,6 +206,9 @@ export default function App() {
           onToggleHideBalances={handleToggleHideBalances}
         />
 
+        {/* Botón / Banner de instalación PWA para iOS y Android */}
+        <PWAInstallButton />
+
         {/* Lista compacta y limpia de bancos */}
         <div className="space-y-2.5">
           <div className="px-1 flex items-center justify-between">
@@ -245,6 +250,9 @@ export default function App() {
         onClose={() => setEditingAccount(null)}
         onSave={handleSaveBankBalance}
       />
+
+      {/* Indicador de estado Offline */}
+      <OfflineIndicator />
     </div>
   );
 }
