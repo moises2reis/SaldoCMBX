@@ -93,13 +93,21 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
 }
 
 async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
-  // 1. Intentar consultar vía Supabase Edge Function ('swift-handler')
+  // 1. Intentar consultar vía Supabase Edge Function ('swift-handler') con múltiples formatos de acción
   try {
-    const res = await callSupabase<{ totalUsd?: number; saldo?: number; balance?: number }>('binance', {
+    const res = await callSupabase<any>('binance', {
       type: 'balance',
     });
     if (res.success && res.data) {
-      const liveBal = Number(res.data.totalUsd ?? res.data.saldo ?? res.data.balance ?? 0);
+      const liveBal = Number(
+        res.data.totalUsd ??
+          res.data.saldo ??
+          res.data.balance ??
+          res.data.total ??
+          res.data.data?.totalUsd ??
+          res.data.data?.balance ??
+          0
+      );
       if (liveBal > 0) {
         setLocalBinanceBalance(liveBal);
         return { totalUsd: liveBal, lastSync: new Date().toISOString() };
@@ -265,7 +273,14 @@ export async function syncSingleBank(
       return data;
     }
   } catch {}
-  return { accounts: await fetchAccountsDirectly() };
+
+  if (id === 'binance' || id.toLowerCase().includes('binance')) {
+    await getOrFetchBinanceBalance();
+  }
+
+  const accounts = await fetchAccountsDirectly();
+  const account = accounts.find((a) => a.id === id);
+  return { account, accounts };
 }
 
 /**

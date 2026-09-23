@@ -1,17 +1,40 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || '';
-const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
+const ENV_SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || '';
+const ENV_SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
 
 let supabaseInstance: SupabaseClient | null = null;
+
+export function getSupabaseConfig(): { url: string; anonKey: string; isConfigured: boolean } {
+  const url =
+    ENV_SUPABASE_URL ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_project_url') || '' : '');
+  const anonKey =
+    ENV_SUPABASE_ANON_KEY ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_anon_key') || '' : '');
+
+  return {
+    url,
+    anonKey,
+    isConfigured: Boolean(url && anonKey),
+  };
+}
+
+export function saveSupabaseConfig(url: string, anonKey: string) {
+  if (typeof localStorage !== 'undefined') {
+    if (url) localStorage.setItem('sb_project_url', url.trim());
+    else localStorage.removeItem('sb_project_url');
+
+    if (anonKey) localStorage.setItem('sb_anon_key', anonKey.trim());
+    else localStorage.removeItem('sb_anon_key');
+  }
+  supabaseInstance = null; // Reiniciar instancia
+}
 
 export function getSupabaseClient(): SupabaseClient | null {
   if (supabaseInstance) return supabaseInstance;
 
-  // Intentar obtener de variables de entorno o de localStorage
-  const url = SUPABASE_URL || localStorage.getItem('sb_project_url') || '';
-  const anonKey = SUPABASE_ANON_KEY || localStorage.getItem('sb_anon_key') || '';
-
+  const { url, anonKey } = getSupabaseConfig();
   if (url && anonKey) {
     try {
       supabaseInstance = createClient(url, anonKey);

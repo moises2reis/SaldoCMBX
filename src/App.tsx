@@ -8,6 +8,8 @@ import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { SupabaseConfigModal } from './components/SupabaseConfigModal';
+import { Database } from 'lucide-react';
 
 export default function App() {
   const [rates, setRates] = useState<ExchangeRates>(INITIAL_RATES);
@@ -20,6 +22,7 @@ export default function App() {
 
   // Modal para editar saldo bancario individual y disparar webhook
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
 
   // Estado para ocultar/mostrar montos (privacidad)
   const [hideBalances, setHideBalances] = useState<boolean>(() => {
@@ -241,6 +244,18 @@ export default function App() {
             ))}
           </div>
         </div>
+
+        {/* Pie de página con acceso a configuración de Supabase */}
+        <div className="pt-2 pb-6 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => setIsSupabaseModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] text-slate-500 hover:text-slate-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Configuración Supabase / Binance</span>
+          </button>
+        </div>
       </div>
 
       {/* Ventana Modal para editar saldo y disparar webhook a Google Apps Script */}
@@ -249,6 +264,13 @@ export default function App() {
         account={editingAccount}
         onClose={() => setEditingAccount(null)}
         onSave={handleSaveBankBalance}
+      />
+
+      {/* Modal para configurar URL y Anon Key de Supabase en GitHub Pages */}
+      <SupabaseConfigModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
+        onSaved={loadData}
       />
 
       {/* Indicador de estado Offline */}
