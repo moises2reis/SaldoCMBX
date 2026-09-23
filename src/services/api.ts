@@ -1,5 +1,8 @@
 import { BankAccount, ExchangeRates } from '../types/dashboard';
 import { INITIAL_ACCOUNTS, INITIAL_RATES } from '../constants/initialData';
+import { callSupabase } from './supabase';
+
+export { callSupabase };
 
 // URLs públicas de Google Apps Script para funcionamiento estático en GitHub Pages
 export const APPSCRIPT_URL =
@@ -89,6 +92,25 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
   return rates;
 }
 
+async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
+  // 1. Intentar consultar vía Supabase Edge Function ('swift-handler')
+  try {
+    const res = await callSupabase<{ totalUsd?: number; saldo?: number; balance?: number }>('binance', {
+      type: 'balance',
+    });
+    if (res.success && res.data) {
+      const liveBal = Number(res.data.totalUsd ?? res.data.saldo ?? res.data.balance ?? 0);
+      if (liveBal > 0) {
+        setLocalBinanceBalance(liveBal);
+        return { totalUsd: liveBal, lastSync: new Date().toISOString() };
+      }
+    }
+  } catch {}
+
+  // 2. Retornar del almacenamiento local en navegador
+  return getLocalBinanceBalance();
+}
+
 /**
  * Consulta directa a Google Apps Script para cuentas bancarias (para GitHub Pages y fallback)
  */
@@ -123,8 +145,8 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
           };
         });
 
-        // Asegurar Binance en la lista
-        const binanceLocal = getLocalBinanceBalance();
+        // Asegurar Binance en la lista con balance enriquecido
+        const binanceData = await getOrFetchBinanceBalance();
         const bIdx = parsedAccounts.findIndex(
           (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
         );
@@ -138,15 +160,15 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
             accountType: 'ID',
             accountNumber: '1272204580',
             nativeCurrency: 'USD',
-            balanceNative: binanceLocal.totalUsd,
-            lastSync: binanceLocal.lastSync || '',
+            balanceNative: binanceData.totalUsd,
+            lastSync: binanceData.lastSync || '',
             linkActualizar: '',
           });
         } else {
           parsedAccounts[bIdx].accountNumber = '1272204580';
           parsedAccounts[bIdx].accountType = 'ID';
-          if (binanceLocal.totalUsd > 0) {
-            parsedAccounts[bIdx].balanceNative = binanceLocal.totalUsd;
+          if (binanceData.totalUsd > 0 && parsedAccounts[bIdx].balanceNative === 0) {
+            parsedAccounts[bIdx].balanceNative = binanceData.totalUsd;
           }
         }
 
