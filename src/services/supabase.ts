@@ -181,7 +181,7 @@ export async function callSupabase<T = any>(
 /**
  * Función de prueba para diagnóstico directo e inspección completa
  */
-export async function testSupabaseConnection(): Promise<{
+export async function testSupabaseConnection(customPayload?: any): Promise<{
   success: boolean;
   status: number;
   body: any;
@@ -198,8 +198,9 @@ export async function testSupabaseConnection(): Promise<{
     return { success: false, status: 0, body: 'Configuración faltante', logs };
   }
 
+  const payloadToSend = customPayload || { action: 'balance' };
   log(`Conectando a: ${url}/functions/v1/swift-handler`);
-  log(`Enviando payload: {"action":"binance","type":"balance"}`);
+  log(`Enviando payload: ${JSON.stringify(payloadToSend)}`);
 
   try {
     const res = await fetch(`${url}/functions/v1/swift-handler`, {
@@ -210,7 +211,7 @@ export async function testSupabaseConnection(): Promise<{
         apikey: anonKey,
         'x-region': 'sa-east-1',
       },
-      body: JSON.stringify({ action: 'binance', type: 'balance' }),
+      body: JSON.stringify(payloadToSend),
     });
 
     log(`Código de estado HTTP: ${res.status} ${res.statusText}`);

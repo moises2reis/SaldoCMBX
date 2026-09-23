@@ -16,7 +16,8 @@ import {
   Copy,
   AlertCircle,
   RefreshCw,
-  Eye,
+  Code,
+  Info,
 } from 'lucide-react';
 
 interface SupabaseConfigModalProps {
@@ -24,6 +25,93 @@ interface SupabaseConfigModalProps {
   onClose: () => void;
   onSaved: () => void;
 }
+
+const SWIFT_HANDLER_TEMPLATE = `// supabase/functions/swift-handler/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-region",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { action, type } = body;
+
+    // 1. Manejo de consulta de saldo Binance
+    if (action === "binance" && (type === "balance" || !body.referencia)) {
+      const apiKey = Deno.env.get("BINANCE_API_KEY");
+      const apiSecret = Deno.env.get("BINANCE_API_SECRET");
+
+      if (!apiKey || !apiSecret) {
+        return new Response(
+          JSON.stringify({ error: "Faltan BINANCE_API_KEY y BINANCE_API_SECRET en Supabase Secrets" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const timestamp = Date.now();
+      const queryString = \`timestamp=\${timestamp}\`;
+      const key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(apiSecret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      const signatureBuf = await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(queryString)
+      );
+      const signature = Array.from(new Uint8Array(signatureBuf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      // Consultar balance de Spot
+      const spotRes = await fetch(
+        \`https://api.binance.com/api/v3/account?\${queryString}&signature=\${signature}\`,
+        { headers: { "X-MBX-APIKEY": apiKey } }
+      );
+      const spotData = await spotRes.json();
+
+      let totalUsd = 0;
+      if (spotData.balances) {
+        for (const b of spotData.balances) {
+          const free = parseFloat(b.free) || 0;
+          const locked = parseFloat(b.locked) || 0;
+          const total = free + locked;
+          if (b.asset === "USDT" || b.asset === "USDC") {
+            totalUsd += total;
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, totalUsd, saldo: totalUsd }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // 2. Si no es saldo, mantener tu lógica actual de validación de pagos
+    return new Response(
+      JSON.stringify({ code: 1010, message: "Faltan datos para Binance." }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err.message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});
+`;
 
 export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   isOpen,
@@ -34,10 +122,13 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   const [url, setUrl] = useState(currentConfig.url);
   const [anonKey, setAnonKey] = useState(currentConfig.anonKey);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'config' | 'test' | 'logs'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'test' | 'code' | 'logs'>('config');
 
   // Test state
   const [testing, setTesting] = useState(false);
+  const [customPayload, setCustomPayload] = useState(
+    JSON.stringify({ action: 'balance' }, null, 2)
+  );
   const [testResult, setTestResult] = useState<{
     success: boolean;
     status: number;
@@ -45,9 +136,10 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
     logs: string[];
   } | null>(null);
 
-  // Live logs
+  // Live logs & copy state
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [copied, setCopied] = useState(false);
+  const [copiedLogs, setCopiedLogs] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
     const unsub = debugLogger.subscribe(setLogs);
@@ -74,12 +166,20 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
     }, 600);
   };
 
-  const runDiagnostics = async () => {
+  const runDiagnostics = async (payloadOverride?: any) => {
     setTesting(true);
     setTestResult(null);
     saveSupabaseConfig(url, anonKey);
+
+    let parsedPayload: any;
     try {
-      const res = await testSupabaseConnection();
+      parsedPayload = payloadOverride !== undefined ? payloadOverride : JSON.parse(customPayload);
+    } catch {
+      parsedPayload = { action: 'binance', type: 'balance' };
+    }
+
+    try {
+      const res = await testSupabaseConnection(parsedPayload);
       setTestResult(res);
       if (res.success) {
         onSaved();
@@ -99,8 +199,14 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
       )
       .join('\n');
     navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setCopiedLogs(true);
+    setTimeout(() => setCopiedLogs(false), 1500);
+  };
+
+  const copyCodeToClipboard = () => {
+    navigator.clipboard.writeText(SWIFT_HANDLER_TEMPLATE);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 1500);
   };
 
   return (
@@ -123,7 +229,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
                 Diagnóstico y Conexión Supabase / Binance
               </h3>
               <p className="text-[11px] text-slate-400">
-                Verifica lo que envía y recibe la Edge Function en tiempo real
+                Verifica la respuesta exacta de <code>swift-handler</code>
               </p>
             </div>
           </div>
@@ -141,29 +247,41 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('config')}
-            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all ${
               activeTab === 'config'
                 ? 'bg-slate-800 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            ⚙️ Configuración
+            ⚙️ Config
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('test')}
-            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all ${
               activeTab === 'test'
                 ? 'bg-slate-800 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            🚀 Prueba en Vivo
+            🚀 Pruebas
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('code')}
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 ${
+              activeTab === 'code'
+                ? 'bg-slate-800 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Code className="w-3.5 h-3.5" />
+            <span>Función</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('logs')}
-            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 ${
               activeTab === 'logs'
                 ? 'bg-slate-800 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
@@ -189,9 +307,6 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
                 onChange={(e) => setUrl(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none transition-colors"
               />
-              <p className="text-[10px] text-slate-500">
-                Coloca la URL base: <code>https://htxzsefmejercvwlarfl.supabase.co</code>
-              </p>
             </div>
 
             <div className="space-y-1">
@@ -211,10 +326,10 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
             <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3 text-[11px] text-slate-400 space-y-1.5">
               <div className="flex items-center gap-1.5 font-semibold text-slate-300">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Llaves de Binance</span>
+                <span>Estado de Conexión</span>
               </div>
               <p>
-                Las llaves <code>BINANCE_API_KEY</code> y <code>BINANCE_API_SECRET</code> deben estar configuradas en <strong>Supabase Dashboard ➔ Project Settings ➔ Edge Functions (Secrets)</strong>.
+                Tu conexión a Supabase está activa. Si tu función responde <code>code: 1010</code>, revisa la pestaña <strong>"Función"</strong> para agregar el soporte de saldo.
               </p>
             </div>
 
@@ -229,7 +344,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
                 className="py-2.5 px-3 text-xs font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-xl transition-colors flex items-center justify-center gap-1.5"
               >
                 <Play className="w-3.5 h-3.5" />
-                <span>Guardar y Probar</span>
+                <span>Probar</span>
               </button>
               <button
                 type="submit"
@@ -248,84 +363,104 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
           </form>
         )}
 
-        {/* Tab 2: Test en Vivo */}
+        {/* Tab 2: Test en Vivo & Payloads */}
         {activeTab === 'test' && (
           <div className="space-y-3 overflow-y-auto pr-1 flex-1">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-300 font-semibold">
-                Prueba de llamada directa a <code>swift-handler</code>:
-              </p>
-              <button
-                type="button"
-                disabled={testing}
-                onClick={runDiagnostics}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl shadow transition-all"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
-                <span>{testing ? 'Consultando Binance...' : 'Ejecutar Diagnóstico'}</span>
-              </button>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-300">
+                  Payload JSON a enviar a <code>swift-handler</code>:
+                </span>
+                <button
+                  type="button"
+                  disabled={testing}
+                  onClick={() => runDiagnostics()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl shadow transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
+                  <span>{testing ? 'Consultando...' : 'Enviar Petición'}</span>
+                </button>
+              </div>
+
+              <textarea
+                rows={3}
+                value={customPayload}
+                onChange={(e) => setCustomPayload(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 font-mono text-xs text-emerald-400 focus:outline-none focus:border-emerald-500"
+              />
             </div>
 
             {testResult && (
               <div className="space-y-3">
                 <div
                   className={`p-3 rounded-2xl border ${
-                    testResult.success
+                    testResult.body?.code === 1010
+                      ? 'bg-amber-950/40 border-amber-500/30 text-amber-300'
+                      : testResult.success
                       ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
                       : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
                   }`}
                 >
                   <div className="flex items-center gap-2 font-bold text-xs">
-                    {testResult.success ? (
+                    {testResult.body?.code === 1010 ? (
+                      <Info className="w-4 h-4 text-amber-400" />
+                    ) : testResult.success ? (
                       <Check className="w-4 h-4 text-emerald-400" />
                     ) : (
                       <AlertCircle className="w-4 h-4 text-rose-400" />
                     )}
                     <span>
-                      {testResult.success
+                      {testResult.body?.code === 1010
+                        ? 'Función alcanzada, pero swift-handler requiere soporte de saldo'
+                        : testResult.success
                         ? `Conexión Exitosa (Status HTTP ${testResult.status})`
-                        : `Fallo de Respuesta (Status HTTP ${testResult.status || 'Error Red/CORS'})`}
+                        : `Fallo de Respuesta (Status HTTP ${testResult.status || 'Error'})`}
                     </span>
                   </div>
                 </div>
 
-                {/* Resultado Respuesta */}
                 <div className="space-y-1">
                   <span className="text-[11px] font-semibold text-slate-400">
-                    Cuerpo de Respuesta de Supabase / Binance:
+                    Cuerpo de Respuesta de swift-handler:
                   </span>
-                  <pre className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-48">
+                  <pre className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-[11px] font-mono text-emerald-400 overflow-x-auto max-h-40">
                     {typeof testResult.body === 'object'
                       ? JSON.stringify(testResult.body, null, 2)
                       : String(testResult.body)}
                   </pre>
                 </div>
-
-                {/* Traza de ejecución */}
-                <div className="space-y-1">
-                  <span className="text-[11px] font-semibold text-slate-400">
-                    Traza del Diagnóstico:
-                  </span>
-                  <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-2.5 space-y-1 font-mono text-[10px] text-slate-300 max-h-36 overflow-y-auto">
-                    {testResult.logs.map((msg, i) => (
-                      <div key={i} className="leading-tight">
-                        {msg}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!testResult && !testing && (
-              <div className="text-center py-8 text-slate-500 text-xs border border-dashed border-slate-800 rounded-2xl">
-                Pulsa <strong>"Ejecutar Diagnóstico"</strong> para enviar una petición real y ver la respuesta exacta de Supabase y Binance.
               </div>
             )}
           </div>
         )}
 
-        {/* Tab 3: Logs en Vivo */}
+        {/* Tab 3: Código de Edge Function */}
+        {activeTab === 'code' && (
+          <div className="space-y-3 overflow-y-auto pr-1 flex-1 flex flex-col">
+            <div className="flex items-center justify-between shrink-0">
+              <div className="text-xs text-slate-300">
+                <p className="font-semibold">Código para tu Edge Function en Supabase</p>
+                <p className="text-[11px] text-slate-400">
+                  Agrega la condición <code>type === "balance"</code> a <code>swift-handler/index.ts</code>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={copyCodeToClipboard}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{copiedCode ? '¡Copiado!' : 'Copiar Código'}</span>
+              </button>
+            </div>
+
+            <pre className="bg-slate-950 border border-slate-800 rounded-2xl p-3 font-mono text-[11px] text-slate-300 overflow-x-auto flex-1 max-h-72">
+              {SWIFT_HANDLER_TEMPLATE}
+            </pre>
+          </div>
+        )}
+
+        {/* Tab 4: Logs en Vivo */}
         {activeTab === 'logs' && (
           <div className="space-y-3 overflow-y-auto pr-1 flex-1 flex flex-col">
             <div className="flex items-center justify-between shrink-0">
@@ -339,7 +474,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
                   className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors"
                 >
                   <Copy className="w-3 h-3" />
-                  <span>{copied ? 'Copiado!' : 'Copiar'}</span>
+                  <span>{copiedLogs ? 'Copiado!' : 'Copiar'}</span>
                 </button>
                 <button
                   type="button"

@@ -94,28 +94,32 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
 }
 
 async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
-  // 1. Intentar consultar vía Supabase Edge Function ('swift-handler') con múltiples formatos de acción
-  debugLogger.addLog('info', 'Binance', 'Consultando saldo de Binance vía Supabase Edge Function...');
+  // 1. Consultar vía Supabase Edge Function ('swift-handler') con action='balance'
+  debugLogger.addLog('info', 'Binance', 'Consultando saldo de Binance vía Supabase Edge Function (action: "balance")...');
   try {
-    const res = await callSupabase<any>('binance', {
-      type: 'balance',
-    });
+    const res = await callSupabase<any>('balance', {});
     if (res.success && res.data) {
+      const dataObj = res.data.data || res.data;
       const liveBal = Number(
-        res.data.totalUsd ??
+        dataObj.totalUsd ??
+          dataObj.saldo ??
+          dataObj.balance ??
+          dataObj.total ??
+          res.data.totalUsd ??
           res.data.saldo ??
-          res.data.balance ??
-          res.data.total ??
-          res.data.data?.totalUsd ??
-          res.data.data?.balance ??
           0
       );
       if (liveBal > 0) {
         setLocalBinanceBalance(liveBal);
-        debugLogger.addLog('success', 'Binance', `Saldo Binance obtenido con éxito: $${liveBal.toFixed(2)} USD`);
+        debugLogger.addLog('success', 'Binance', `Saldo Binance obtenido con éxito: $${liveBal.toFixed(2)} USD`, dataObj);
         return { totalUsd: liveBal, lastSync: new Date().toISOString() };
+      } else if (res.data.code === 1000 && liveBal === 0) {
+        // Saldo es 0.00
+        setLocalBinanceBalance(0);
+        debugLogger.addLog('info', 'Binance', 'Saldo Binance obtenido: $0.00 USD', dataObj);
+        return { totalUsd: 0, lastSync: new Date().toISOString() };
       } else {
-        debugLogger.addLog('warn', 'Binance', `Respuesta recibida pero el saldo parseado es 0`, res.data);
+        debugLogger.addLog('warn', 'Binance', `Respuesta recibida: ${res.data.message || JSON.stringify(res.data)}`, res.data);
       }
     } else {
       debugLogger.addLog('warn', 'Binance', `No se pudo obtener saldo en vivo: ${res.error || 'Respuesta fallida'}`);
