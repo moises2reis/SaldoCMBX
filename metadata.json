@@ -1,0 +1,6 @@
+{
+  "name": "BancoDash - Panel Multibanca en Tiempo Real",
+  "description": "Panel de control financiero minimalista para consultar y gestionar en tiempo real los saldos en Bolívares (Bs.) y Dólares ($) de BDV, Banesco, BNC y Binance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
