@@ -5,10 +5,21 @@ const ENV_SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string)
 
 let supabaseInstance: SupabaseClient | null = null;
 
+export function cleanSupabaseUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  let cleaned = rawUrl.trim();
+  // Quitar rutas si el usuario pegó la URL del endpoint directamente
+  cleaned = cleaned.replace(/\/functions\/.*$/i, '');
+  cleaned = cleaned.replace(/\/rest\/.*$/i, '');
+  cleaned = cleaned.replace(/\/+$/, '');
+  return cleaned;
+}
+
 export function getSupabaseConfig(): { url: string; anonKey: string; isConfigured: boolean } {
-  const url =
+  const rawUrl =
     ENV_SUPABASE_URL ||
     (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_project_url') || '' : '');
+  const url = cleanSupabaseUrl(rawUrl);
   const anonKey =
     ENV_SUPABASE_ANON_KEY ||
     (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_anon_key') || '' : '');
@@ -20,9 +31,10 @@ export function getSupabaseConfig(): { url: string; anonKey: string; isConfigure
   };
 }
 
-export function saveSupabaseConfig(url: string, anonKey: string) {
+export function saveSupabaseConfig(rawUrl: string, anonKey: string) {
+  const url = cleanSupabaseUrl(rawUrl);
   if (typeof localStorage !== 'undefined') {
-    if (url) localStorage.setItem('sb_project_url', url.trim());
+    if (url) localStorage.setItem('sb_project_url', url);
     else localStorage.removeItem('sb_project_url');
 
     if (anonKey) localStorage.setItem('sb_anon_key', anonKey.trim());
