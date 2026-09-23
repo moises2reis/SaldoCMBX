@@ -1,6 +1,7 @@
 import { BankAccount, ExchangeRates } from '../types/dashboard';
 import { INITIAL_ACCOUNTS, INITIAL_RATES } from '../constants/initialData';
 import { callSupabase } from './supabase';
+import { debugLogger } from './debugLogger';
 
 export { callSupabase };
 
@@ -94,6 +95,7 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
 
 async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
   // 1. Intentar consultar vía Supabase Edge Function ('swift-handler') con múltiples formatos de acción
+  debugLogger.addLog('info', 'Binance', 'Consultando saldo de Binance vía Supabase Edge Function...');
   try {
     const res = await callSupabase<any>('binance', {
       type: 'balance',
@@ -110,13 +112,24 @@ async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync:
       );
       if (liveBal > 0) {
         setLocalBinanceBalance(liveBal);
+        debugLogger.addLog('success', 'Binance', `Saldo Binance obtenido con éxito: $${liveBal.toFixed(2)} USD`);
         return { totalUsd: liveBal, lastSync: new Date().toISOString() };
+      } else {
+        debugLogger.addLog('warn', 'Binance', `Respuesta recibida pero el saldo parseado es 0`, res.data);
       }
+    } else {
+      debugLogger.addLog('warn', 'Binance', `No se pudo obtener saldo en vivo: ${res.error || 'Respuesta fallida'}`);
     }
-  } catch {}
+  } catch (err: any) {
+    debugLogger.addLog('error', 'Binance', `Error general en getOrFetchBinanceBalance: ${err?.message}`);
+  }
 
   // 2. Retornar del almacenamiento local en navegador
-  return getLocalBinanceBalance();
+  const local = getLocalBinanceBalance();
+  if (local.totalUsd > 0) {
+    debugLogger.addLog('info', 'Binance', `Usando saldo de respaldo local: $${local.totalUsd.toFixed(2)} USD`);
+  }
+  return local;
 }
 
 /**

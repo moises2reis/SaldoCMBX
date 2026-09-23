@@ -207,6 +207,7 @@ export default function App() {
           isSyncing={isSyncing}
           hideBalances={hideBalances}
           onToggleHideBalances={handleToggleHideBalances}
+          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         />
 
         {/* Botón / Banner de instalación PWA para iOS y Android */}
