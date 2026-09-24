@@ -126,7 +126,9 @@ async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync:
  */
 export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
   try {
-    const res = await fetch(APPSCRIPT_URL);
+    const res = await fetch(APPSCRIPT_URL, {
+      signal: AbortSignal.timeout(8000),
+    });
     if (res.ok) {
       const rawData = await res.json();
       if (Array.isArray(rawData) && rawData.length > 0) {
@@ -198,7 +200,7 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
     console.warn('Error fetching accounts directly from AppScript:', err);
   }
 
-  return INITIAL_ACCOUNTS;
+  return [];
 }
 
 /**
@@ -209,18 +211,20 @@ export async function fetchBalancesAndRates(): Promise<{
   accounts: BankAccount[];
   rates: ExchangeRates;
 }> {
-  // 1. Intentar vía endpoint local /api (si existe servidor backend)
+  // 1. Intentar vía endpoint local /api con timeout de 4 segundos
   try {
-    const res = await fetch('/api/banks/balances');
+    const res = await fetch('/api/banks/balances', {
+      signal: AbortSignal.timeout(4000),
+    });
     if (res.ok) {
       const data = await res.json();
-      if (data && data.accounts) {
+      if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
         return data;
       }
     }
   } catch {}
 
-  // 2. Modo Estático (GitHub Pages / Standalone Client-side)
+  // 2. Modo Estático o Fallback Directo
   const [accounts, rates] = await Promise.all([
     fetchAccountsDirectly(),
     fetchRatesDirectly(),

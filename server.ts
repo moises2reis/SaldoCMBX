@@ -456,7 +456,9 @@ async function startServer() {
 
   // Consulta en tiempo real a Google Apps Script de saldos, Binance y tasas al entrar/refrescar
   app.get('/api/banks/balances', async (_req, res) => {
-    await getTotalUSDT().catch(() => {});
+    // Sincronizar Binance en segundo plano sin bloquear la respuesta de los bancos
+    getTotalUSDT().catch(() => {});
+
     const [accounts, rates, p2pPrice] = await Promise.all([
       fetchAccountsFromAppScript(),
       fetchRatesFromAppScript(),
@@ -470,7 +472,7 @@ async function startServer() {
 
     res.json({
       success: true,
-      accounts,
+      accounts: accounts && accounts.length > 0 ? accounts : cachedAccounts,
       rates,
       serverTime: new Date().toISOString(),
     });

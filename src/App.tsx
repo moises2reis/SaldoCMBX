@@ -142,25 +142,39 @@ export default function App() {
     try {
       const data = await fetchBalancesAndRates();
 
-      if (data?.rates) {
-        setRates(data.rates);
-        try {
-          localStorage.setItem('cached_exchange_rates', JSON.stringify(data.rates));
-        } catch {}
+      if (data?.rates && (data.rates.bcv || data.rates.bcvUsd)) {
+        setRates((prev) => {
+          const next = { ...prev, ...data.rates };
+          try {
+            localStorage.setItem('cached_exchange_rates', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
       }
 
       if (data?.accounts && data.accounts.length > 0) {
-        setAccounts(data.accounts);
-        try {
-          localStorage.setItem('cached_bank_accounts', JSON.stringify(data.accounts));
-        } catch {}
+        setAccounts((prevAccounts) => {
+          const hasAnyLiveBalance = data.accounts.some(
+            (a) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || Boolean(a.lastSync)
+          );
+
+          // Si la respuesta no trajo saldos válidos pero teníamos datos en caché, preservar la caché
+          if (!hasAnyLiveBalance && prevAccounts.some((a) => a.balanceNative > 0)) {
+            return prevAccounts;
+          }
+
+          try {
+            localStorage.setItem('cached_bank_accounts', JSON.stringify(data.accounts));
+          } catch {}
+          return data.accounts;
+        });
       }
       return data;
     } catch (err) {
       console.warn('Error fetching live data in background:', err);
       return null;
     } finally {
-      if (!silent) setIsSyncing(false);
+      setIsSyncing(false);
     }
   }, []);
 
