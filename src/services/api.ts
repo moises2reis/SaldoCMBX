@@ -60,7 +60,7 @@ function setLocalBinanceBalance(totalUsd: number) {
 export async function fetchRatesDirectly(): Promise<ExchangeRates> {
   let rates: ExchangeRates = { ...INITIAL_RATES };
   try {
-    const res = await fetch(`${RATES_APPSCRIPT_URL}?_t=${Date.now()}`);
+    const res = await fetch(RATES_APPSCRIPT_URL);
     if (res.ok) {
       const data = await res.json();
       if (data && (data.tasa_usd || data.tasa_eur)) {
@@ -77,8 +77,8 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
         };
       }
     }
-  } catch (err) {
-    console.warn('Error fetching rates directly:', err);
+  } catch {
+    // Usar tasas por defecto
   }
 
   // Intentar obtener tasa Binance P2P
@@ -126,7 +126,7 @@ async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync:
  */
 export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
   try {
-    const res = await fetch(`${APPSCRIPT_URL}?_t=${Date.now()}`);
+    const res = await fetch(APPSCRIPT_URL);
     if (res.ok) {
       const rawData = await res.json();
       if (Array.isArray(rawData) && rawData.length > 0) {
@@ -150,7 +150,7 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
             bankShort: rawName,
             accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
             accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
-            categoria: rawCategory ? String(rawCategory).trim() : 'Banco',
+            categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Banco'),
             nativeCurrency: isBinance ? 'USD' : 'VES',
             balanceNative: parseAmount(item.monto_bs),
             montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,

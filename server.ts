@@ -141,65 +141,99 @@ async function startServer() {
     }
   }
 
+  // Archivo para persistencia de cuentas en disco
+  const ACCOUNTS_CACHE_FILE = path.join(__dirname, 'server', 'accounts_cache.json');
+
+  function loadCachedAccounts(): BankAccount[] {
+    try {
+      if (fs.existsSync(ACCOUNTS_CACHE_FILE)) {
+        const fileData = fs.readFileSync(ACCOUNTS_CACHE_FILE, 'utf-8');
+        const parsed = JSON.parse(fileData);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.log('No previous cached accounts file found, using defaults');
+    }
+    return [
+      {
+        id: 'bdv',
+        bankId: 'bdv',
+        bankName: 'BDV',
+        bankShort: 'BDV',
+        accountType: 'Cuenta Bancaria',
+        accountNumber: '04129549022',
+        nativeCurrency: 'VES',
+        balanceNative: 0,
+        lastSync: '',
+        linkActualizar: 'https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BDV',
+      },
+      {
+        id: 'banesco',
+        bankId: 'banesco',
+        bankName: 'BANESCO',
+        bankShort: 'BANESCO',
+        accountType: 'Cuenta Bancaria',
+        accountNumber: '04244909232',
+        nativeCurrency: 'VES',
+        balanceNative: 0,
+        lastSync: '',
+        linkActualizar: 'https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BANESCO',
+      },
+      {
+        id: 'bnc',
+        bankId: 'bnc',
+        bankName: 'BNC',
+        bankShort: 'BNC',
+        accountType: 'Cuenta Bancaria',
+        accountNumber: '04129549022',
+        nativeCurrency: 'VES',
+        balanceNative: 0,
+        lastSync: '',
+        linkActualizar: 'https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BNC',
+      },
+      {
+        id: 'bdv-tu-combox-c-a',
+        bankId: 'bdv-combox',
+        bankName: 'BDV TU COMBOX C.A',
+        bankShort: 'BDV TU COMBOX C.A',
+        accountType: 'Cuenta Bancaria',
+        accountNumber: 'J501298211',
+        nativeCurrency: 'VES',
+        balanceNative: 0,
+        lastSync: '',
+        linkActualizar: '',
+      },
+    ];
+  }
+
+  function saveCachedAccounts(accounts: BankAccount[]) {
+    try {
+      const serverDir = path.dirname(ACCOUNTS_CACHE_FILE);
+      if (!fs.existsSync(serverDir)) {
+        fs.mkdirSync(serverDir, { recursive: true });
+      }
+      fs.writeFileSync(ACCOUNTS_CACHE_FILE, JSON.stringify(accounts, null, 2), 'utf-8');
+    } catch (e) {
+      // Ignorar errores al escribir caché en disco
+    }
+  }
+
   // Cache local de cuentas
-  let cachedAccounts: BankAccount[] = [
-    {
-      id: 'bdv',
-      bankId: 'bdv',
-      bankName: 'BDV',
-      bankShort: 'BDV',
-      accountType: 'Cuenta Bancaria',
-      accountNumber: '04129549022',
-      nativeCurrency: 'VES',
-      balanceNative: 0,
-      lastSync: '',
-      linkActualizar: 'https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BDV',
-    },
-    {
-      id: 'banesco',
-      bankId: 'banesco',
-      bankName: 'BANESCO',
-      bankShort: 'BANESCO',
-      accountType: 'Cuenta Bancaria',
-      accountNumber: '04244909232',
-      nativeCurrency: 'VES',
-      balanceNative: 0,
-      lastSync: '',
-      linkActualizar: 'https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BANESCO',
-    },
-    {
-      id: 'bnc',
-      bankId: 'bnc',
-      bankName: 'BNC',
-      bankShort: 'BNC',
-      accountType: 'Cuenta Bancaria',
-      accountNumber: '04129549022',
-      nativeCurrency: 'VES',
-      balanceNative: 0,
-      lastSync: '',
-      linkActualizar: 'https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BNC',
-    },
-    {
-      id: 'bdv-tu-combox-c-a',
-      bankId: 'bdv-combox',
-      bankName: 'BDV TU COMBOX C.A',
-      bankShort: 'BDV TU COMBOX C.A',
-      accountType: 'Cuenta Bancaria',
-      accountNumber: 'J501298211',
-      nativeCurrency: 'VES',
-      balanceNative: 0,
-      lastSync: '',
-      linkActualizar: '',
-    },
-  ];
+  let cachedAccounts: BankAccount[] = loadCachedAccounts();
 
   // Función para obtener tasas oficiales dinámicas desde el Google Apps Script
   async function fetchRatesFromAppScript() {
     try {
-      const url = `${RATES_APPSCRIPT_URL}${RATES_APPSCRIPT_URL.includes('?') ? '&' : '?'}_t=${Date.now()}`;
-      const response = await fetch(url, {
+      const response = await fetch(RATES_APPSCRIPT_URL, {
         redirect: 'follow',
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'application/json, text/plain, */*',
+        },
+        signal: AbortSignal.timeout(10000),
       });
 
       if (response.ok) {
@@ -220,8 +254,8 @@ async function startServer() {
           };
         }
       }
-    } catch (err) {
-      console.warn('Error fetching BCV rates from AppScript, keeping cached:', err);
+    } catch {
+      // Usar tasas en caché si el script no está disponible temporalmente
     }
     return cachedRates;
   }
@@ -229,49 +263,52 @@ async function startServer() {
   // Función para obtener los datos de bancos desde Google Apps Script
   async function fetchAccountsFromAppScript(): Promise<BankAccount[]> {
     try {
-      const url = `${APPSCRIPT_URL}${APPSCRIPT_URL.includes('?') ? '&' : '?'}_t=${Date.now()}`;
-      const response = await fetch(url, {
+      const response = await fetch(APPSCRIPT_URL, {
         redirect: 'follow',
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'application/json, text/plain, */*',
+        },
+        signal: AbortSignal.timeout(12000),
       });
 
-      if (!response.ok) {
-        throw new Error(`Google Apps Script returned status ${response.status}`);
-      }
+      if (response.ok) {
+        const rawData = (await response.json()) as RawBankRecord[];
+        if (Array.isArray(rawData) && rawData.length > 0) {
+          const seenIds = new Set<string>();
+          cachedAccounts = rawData.map((item, index) => {
+            const rawName = String(item.id_banco || '').trim();
+            let cleanId =
+              rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
+            if (seenIds.has(cleanId)) {
+              cleanId = `${cleanId}-${index}`;
+            }
+            seenIds.add(cleanId);
+            const isBinance = rawName.toLowerCase().includes('binance');
+            const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Banco');
+            const rawUsd = item['monto_$'] ?? item.monto_$ ?? item.monto_usd ?? item.monto_dolar;
 
-      const rawData = (await response.json()) as RawBankRecord[];
-      if (Array.isArray(rawData) && rawData.length > 0) {
-        const seenIds = new Set<string>();
-        cachedAccounts = rawData.map((item, index) => {
-          const rawName = String(item.id_banco || '').trim();
-          let cleanId =
-            rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
-          if (seenIds.has(cleanId)) {
-            cleanId = `${cleanId}-${index}`;
-          }
-          seenIds.add(cleanId);
-          const isBinance = rawName.toLowerCase().includes('binance');
-          const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Banco');
-          const rawUsd = item['monto_$'] ?? item.monto_$ ?? item.monto_usd ?? item.monto_dolar;
-
-          return {
-            id: cleanId,
-            bankId: cleanId,
-            bankName: rawName,
-            bankShort: rawName,
-            accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
-            accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
-            categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Banco'),
-            nativeCurrency: isBinance ? 'USD' : 'VES',
-            balanceNative: parseAmount(item.monto_bs),
-            montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,
-            lastSync: item.fecha_actualizacion ? String(item.fecha_actualizacion) : '',
-            linkActualizar: item.link_actualizar ? String(item.link_actualizar) : '',
-          };
-        });
+            return {
+              id: cleanId,
+              bankId: cleanId,
+              bankName: rawName,
+              bankShort: rawName,
+              accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
+              accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
+              categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Banco'),
+              nativeCurrency: isBinance ? 'USD' : 'VES',
+              balanceNative: parseAmount(item.monto_bs),
+              montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,
+              lastSync: item.fecha_actualizacion ? String(item.fecha_actualizacion) : '',
+              linkActualizar: item.link_actualizar ? String(item.link_actualizar) : '',
+            };
+          });
+          saveCachedAccounts(cachedAccounts);
+        }
       }
-    } catch (error) {
-      console.warn('Error connecting to Google Apps Script, using cached data:', error);
+    } catch {
+      // Usar datos en caché local si Google Apps Script no responde
     }
 
     // Asegurar que Binance esté SIEMPRE presente en la lista de bancos
