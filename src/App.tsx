@@ -481,6 +481,7 @@ export default function App() {
             isSyncing={isSyncing}
             hideBalances={hideHeaderTotal}
             onToggleHideBalances={handleToggleHideHeaderTotal}
+            onRefresh={() => loadData(false)}
             categoryLabel={currentCategoryLabel}
           />
 
@@ -595,7 +596,7 @@ export default function App() {
                   onClick={() => setSelectedCategory(cat.id)}
                   className={`flex-1 min-w-[70px] py-2 sm:py-2.5 px-2.5 sm:px-4 rounded-2xl transition-all duration-150 active:scale-95 flex flex-col items-center justify-center gap-1 select-none group ${
                     isActive
-                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700/90 shadow-md ring-1 ring-emerald-500/30'
+                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700 shadow-md'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 border border-transparent'
                   }`}
                 >

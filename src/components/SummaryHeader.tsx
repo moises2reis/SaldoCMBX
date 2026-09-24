@@ -1,7 +1,7 @@
 import React from 'react';
 import { ForeignCurrency } from '../types/dashboard';
 import { formatBs, formatUSD, formatRate, formatShortDate } from '../utils/formatters';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, RotateCw } from 'lucide-react';
 
 interface SummaryHeaderProps {
   totalBs: number;
@@ -15,6 +15,7 @@ interface SummaryHeaderProps {
   isSyncing?: boolean;
   hideBalances?: boolean;
   onToggleHideBalances?: () => void;
+  onRefresh?: () => void;
   categoryLabel?: string;
 }
 
@@ -27,11 +28,21 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
   bcvEur,
   binanceP2p = 0,
   fechaValor,
+  isSyncing = false,
   hideBalances = false,
   onToggleHideBalances,
+  onRefresh,
   categoryLabel,
 }) => {
   const shortDate = formatShortDate(fechaValor);
+
+  const handleRefreshClick = () => {
+    if (onRefresh) {
+      onRefresh();
+    } else {
+      window.location.reload();
+    }
+  };
 
   return (
     <header className="space-y-3 pb-1">
@@ -126,7 +137,7 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
           <button
             type="button"
             onClick={onToggleHideBalances}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 rounded-lg transition-colors border border-transparent hover:border-slate-800"
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 active:scale-95 rounded-lg transition-all border border-transparent hover:border-slate-800"
             title={hideBalances ? 'Mostrar fondos' : 'Ocultar fondos'}
             aria-label={hideBalances ? 'Mostrar fondos' : 'Ocultar fondos'}
           >
@@ -135,6 +146,16 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
             ) : (
               <EyeOff className="w-5 h-5" />
             )}
+          </button>
+          <button
+            type="button"
+            onClick={handleRefreshClick}
+            disabled={isSyncing}
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 active:scale-95 rounded-lg transition-all border border-transparent hover:border-slate-800 disabled:opacity-50"
+            title="Actualizar datos"
+            aria-label="Actualizar datos"
+          >
+            <RotateCw className={`w-5 h-5 ${isSyncing ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
           </button>
         </div>
         <div className="text-base sm:text-lg font-medium font-mono text-slate-400 tabular-nums tracking-tight mt-0.5">
