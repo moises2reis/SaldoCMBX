@@ -23,7 +23,17 @@ export default function App() {
     } catch {}
     return INITIAL_RATES;
   });
-  const [foreignCurrency, setForeignCurrency] = useState<ForeignCurrency>('USD');
+
+  const [foreignCurrency, setForeignCurrency] = useState<ForeignCurrency>(() => {
+    try {
+      const saved = localStorage.getItem('cached_foreign_currency');
+      if (saved === 'USD' || saved === 'EUR' || saved === 'P2P') {
+        return saved as ForeignCurrency;
+      }
+    } catch {}
+    return 'USD';
+  });
+
   const [accounts, setAccounts] = useState<BankAccount[]>(() => {
     try {
       const saved = localStorage.getItem('cached_bank_accounts');
@@ -36,13 +46,21 @@ export default function App() {
     } catch {}
     return INITIAL_ACCOUNTS;
   });
+
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncingBankId, setSyncingBankId] = useState<string | null>(null);
   const [monitoredBankId, setMonitoredBankId] = useState<string | null>(null);
   const [binanceSyncing, setBinanceSyncing] = useState<boolean>(false);
   const [protectionSeconds, setProtectionSeconds] = useState<number>(0);
   const [justUpdatedBankId, setJustUpdatedBankId] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('todos');
+
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('cached_selected_category');
+      if (saved) return saved;
+    } catch {}
+    return 'todos';
+  });
 
   // Modal para editar saldo bancario individual y disparar webhook
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
@@ -57,6 +75,24 @@ export default function App() {
       console.warn('Error saving cached bank accounts:', err);
     }
   }, [accounts]);
+
+  // Persistir categoría seleccionada en caché
+  useEffect(() => {
+    try {
+      if (selectedCategory) {
+        localStorage.setItem('cached_selected_category', selectedCategory);
+      }
+    } catch {}
+  }, [selectedCategory]);
+
+  // Persistir moneda extranjera seleccionada en caché
+  useEffect(() => {
+    try {
+      if (foreignCurrency) {
+        localStorage.setItem('cached_foreign_currency', foreignCurrency);
+      }
+    } catch {}
+  }, [foreignCurrency]);
 
   // Estado para ocultar/mostrar monto total del encabezado
   const [hideHeaderTotal, setHideHeaderTotal] = useState<boolean>(() => {
@@ -115,31 +151,42 @@ export default function App() {
 
       if (data?.accounts && data.accounts.length > 0) {
         setAccounts(data.accounts);
+        try {
+          localStorage.setItem('cached_bank_accounts', JSON.stringify(data.accounts));
+        } catch {}
       }
       return data;
     } catch (err) {
-      console.warn('Error fetching live data:', err);
+      console.warn('Error fetching live data in background:', err);
       return null;
     } finally {
       if (!silent) setIsSyncing(false);
     }
   }, []);
 
-  // Cargar datos al entrar a la página (en segundo plano si ya hay caché)
+  // Cargar datos al entrar a la página (en segundo plano si ya hay caché para inicio instantáneo)
   useEffect(() => {
     const hasCached = !!localStorage.getItem('cached_bank_accounts');
     loadData(hasCached);
   }, [loadData]);
 
-  // Actualización inteligente al regresar a la pestaña activa
+  // Actualización en segundo plano al regresar a la pestaña activa, enfocar o recargar la página
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleActiveEvent = () => {
       if (document.visibilityState === 'visible') {
         loadData(true);
       }
     };
-    window.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
+
+    window.addEventListener('visibilitychange', handleActiveEvent);
+    window.addEventListener('focus', handleActiveEvent);
+    window.addEventListener('pageshow', handleActiveEvent);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleActiveEvent);
+      window.removeEventListener('focus', handleActiveEvent);
+      window.removeEventListener('pageshow', handleActiveEvent);
+    };
   }, [loadData]);
 
   // Manejador del temporizador de 20 segundos de protección global
