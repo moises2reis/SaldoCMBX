@@ -21,16 +21,11 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   account,
   activeRate,
   hideBalances = false,
-  isSyncing = false,
-  isBlocked = false,
-  protectionSeconds = 0,
-  justUpdated = false,
-  onSync,
   onEditBalance,
 }) => {
   const [, setTick] = useState(0);
 
-  // Recalcular los minutos transcurridos cada 15 segundos
+  // Recalcular el tiempo transcurrido cada 15 segundos
   useEffect(() => {
     const timer = setInterval(() => {
       setTick((t) => t + 1);
@@ -78,21 +73,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
     ? !hideBalances && Math.abs(cashUsd) < 0.001 && Math.abs(cashBs) < 0.001
     : !hideBalances && Math.abs(amountUsd) < 0.001 && Math.abs(amountBs) < 0.001;
 
-  const handleRefreshClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isSyncing || isBlocked) return;
-    if (onSync) {
-      onSync(account.id);
-    }
-  };
-
   const handleCardClick = () => {
-    if (isBinance) {
-      if (onSync && !isSyncing && !isBlocked) {
-        onSync(account.id);
-      }
-      return;
-    }
     if (onEditBalance) {
       onEditBalance(account);
     }
@@ -103,20 +84,12 @@ export const BankListItem: React.FC<BankListItemProps> = ({
       onClick={handleCardClick}
       role="button"
       tabIndex={0}
-      title={
-        isBinance
-          ? "Toca para sincronizar Binance"
-          : isEfectivo
-          ? "Toca para editar efectivo ($ y Bs) y enviar webhook"
-          : "Toca para editar saldo y enviar webhook"
-      }
-      className={`bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all flex items-center justify-between gap-3 shadow-sm select-none group ${
-        isBinance ? 'cursor-default' : 'cursor-pointer'
-      }`}
+      title="Toca para actualizar (Macro o Manual)"
+      className="bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/90 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all flex items-center justify-between gap-3 shadow-sm select-none group cursor-pointer"
     >
       {/* Izquierda: Icono y nombre */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 bg-slate-800/80 border-slate-700/50">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 bg-slate-800/80 border-slate-700/50 group-hover:border-slate-600 transition-colors">
           {isBinance ? (
             <Gem className="w-4 h-4 text-slate-400" />
           ) : isEfectivo ? (
@@ -128,7 +101,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-white tracking-tight truncate">
+            <span className="font-bold text-sm text-white tracking-tight truncate group-hover:text-emerald-300 transition-colors">
               {account.bankShort}
             </span>
           </div>
@@ -140,104 +113,58 @@ export const BankListItem: React.FC<BankListItemProps> = ({
         </div>
       </div>
 
-      {/* Derecha: Montos, tiempo transcurrido y Botón individual de actualización */}
-      <div className="flex items-center gap-3 shrink-0">
-        {/* Montos y tiempo transcurrido */}
-        <div className="text-right flex flex-col items-end">
-          {isZero ? (
-            /* Monto en 0: un solo '-' en gris */
-            <div className="text-sm sm:text-base font-bold font-mono text-slate-500 tabular-nums leading-tight">
-              -
+      {/* Derecha: Montos y tiempo transcurrido */}
+      <div className="text-right flex flex-col items-end shrink-0">
+        {isZero ? (
+          /* Monto en 0: un solo '-' en gris */
+          <div className="text-sm sm:text-base font-bold font-mono text-slate-500 tabular-nums leading-tight">
+            -
+          </div>
+        ) : isEfectivo ? (
+          <>
+            {/* Tarjeta Efectivo: Total en $ en VERDE */}
+            <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+              {hideBalances ? '$ ****' : formatUSD(amountUsd)}
             </div>
-          ) : isEfectivo ? (
-            <>
-              {/* Tarjeta Efectivo: Total en $ en VERDE */}
-              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
-                {hideBalances ? '$ ****' : formatUSD(amountUsd)}
-              </div>
 
-              {/* Tarjeta Efectivo: Debajo en GRIS y más pequeño los montos en $ y Bs individuales */}
-              <div className="text-[10px] sm:text-[11px] font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5 flex items-center justify-end gap-1.5">
-                {hideBalances ? (
-                  <span>$ **** · Bs. ****</span>
-                ) : (
-                  <>
-                    <span>{formatUSD(cashUsd)}</span>
-                    <span className="text-slate-600">·</span>
-                    <span>{formatBs(cashBs)}</span>
-                  </>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Monto en Dólares (Original: siempre Verde) */}
-              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
-                {hideBalances ? '$ ****' : formatUSD(amountUsd)}
-              </div>
-
-              {/* Monto en Bolívares (Original: siempre Gris) */}
-              <div className="text-[11px] sm:text-xs font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5">
-                {hideBalances ? 'Bs. ****' : formatBs(amountBs)}
-              </div>
-            </>
-          )}
-
-          {/* Tiempo transcurrido debajo del monto (solo si existe fecha) */}
-          {timeAgoText ? (
-            <div
-              className={`inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono tabular-nums mt-0.5 ${
-                isOutdated ? 'text-amber-400 font-medium' : 'text-slate-500'
-              }`}
-            >
-              <Clock className={`w-2.5 h-2.5 ${isOutdated ? 'text-amber-400' : 'text-slate-500'}`} />
-              <span>{timeAgoText}</span>
+            {/* Tarjeta Efectivo: Debajo en GRIS y más pequeño los montos en $ y Bs individuales */}
+            <div className="text-[10px] sm:text-[11px] font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5 flex items-center justify-end gap-1.5">
+              {hideBalances ? (
+                <span>$ **** · Bs. ****</span>
+              ) : (
+                <>
+                  <span>{formatUSD(cashUsd)}</span>
+                  <span className="text-slate-600">·</span>
+                  <span>{formatBs(cashBs)}</span>
+                </>
+              )}
             </div>
-          ) : null}
-        </div>
+          </>
+        ) : (
+          <>
+            {/* Monto en Dólares (Original: siempre Verde) */}
+            <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+              {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+            </div>
 
-        {/* Botón individual de actualizar con protección */}
-        <button
-          type="button"
-          onClick={handleRefreshClick}
-          disabled={isSyncing || isBlocked}
-          title={
-            isSyncing
-              ? `Actualizando ${account.bankShort}... Protección activa (${protectionSeconds}s)`
-              : isBlocked
-              ? `Protección activa: espera ${protectionSeconds}s para actualizar otros bancos`
-              : isOutdated
-              ? `Actualizar ${account.bankShort} (saldo desactualizado > 1h 30m)`
-              : `Actualizar ${account.bankShort}`
-          }
-          aria-label={`Actualizar ${account.bankShort}`}
-          className={`h-7 sm:h-7.5 ${
-            isSyncing ? 'min-w-7 px-2' : 'w-7 sm:w-7.5'
-          } rounded-full border transition-all flex items-center justify-center gap-1 shrink-0 ${
-            justUpdated
-              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-              : isSyncing
-              ? 'bg-slate-800 border-amber-500/40 text-amber-400 cursor-wait'
-              : isBlocked
-              ? 'bg-slate-900/40 border-slate-800/60 text-slate-600 opacity-40 cursor-not-allowed'
-              : isOutdated
-              ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 hover:border-amber-500/50 text-amber-400 hover:text-amber-300 active:scale-95'
-              : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-white active:scale-95'
-          }`}
-        >
-          {justUpdated ? (
-            <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
-          ) : isSyncing ? (
-            <>
-              <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
-              <span className="text-[9px] font-mono font-bold text-amber-400">{protectionSeconds}s</span>
-            </>
-          ) : isBlocked ? (
-            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600" />
-          ) : (
-            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-          )}
-        </button>
+            {/* Monto en Bolívares (Original: siempre Gris) */}
+            <div className="text-[11px] sm:text-xs font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5">
+              {hideBalances ? 'Bs. ****' : formatBs(amountBs)}
+            </div>
+          </>
+        )}
+
+        {/* Tiempo transcurrido debajo del monto (solo si existe fecha) */}
+        {timeAgoText ? (
+          <div
+            className={`inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono tabular-nums mt-0.5 ${
+              isOutdated ? 'text-amber-400 font-medium' : 'text-slate-500'
+            }`}
+          >
+            <Clock className={`w-2.5 h-2.5 ${isOutdated ? 'text-amber-400' : 'text-slate-500'}`} />
+            <span>{timeAgoText}</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );

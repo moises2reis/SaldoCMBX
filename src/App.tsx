@@ -498,12 +498,19 @@ export default function App() {
         </div>
       </div>
 
-      {/* Ventana Modal para editar saldo y disparar webhook a Google Apps Script */}
+      {/* Ventana Modal para actualizar con macro o de forma manual */}
       <EditBankBalanceModal
         isOpen={editingAccount !== null}
         account={editingAccount}
         onClose={() => setEditingAccount(null)}
         onSave={handleSaveBankBalance}
+        onSyncMacro={handleSyncSingleBank}
+        isSyncingMacro={
+          syncingBankId === editingAccount?.id ||
+          (editingAccount?.id === 'binance' && binanceSyncing)
+        }
+        protectionSeconds={protectionSeconds}
+        isBlocked={protectionSeconds > 0 && syncingBankId !== editingAccount?.id}
       />
 
       {/* Indicador de estado Offline */}
