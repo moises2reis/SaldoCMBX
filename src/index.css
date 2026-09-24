@@ -1,24 +1,63 @@
 @import "tailwindcss";
 
-/* Ocultar barra desplazadora (scrollbars) en toda la app y elementos desplazables */
+/* Ajustes globales de física táctil y scroll nativo tipo App */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  scroll-behavior: smooth;
+  height: 100%;
+}
+
+body {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Ocultar barras de desplazamiento manteniendo el scroll fluido nativo */
 * {
-  scrollbar-width: none !important; /* Firefox */
-  -ms-overflow-style: none !important; /* IE y Edge */
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  -webkit-tap-highlight-color: transparent;
 }
 
 *::-webkit-scrollbar {
-  display: none !important; /* Chrome, Safari, Opera */
-  width: 0 !important;
-  height: 0 !important;
-}
-
-html, body {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-html::-webkit-scrollbar, body::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
+}
+
+/* Estilos de interacción táctil nativa en botones y tarjetas */
+button, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Soporte para safe area en dispositivos móviles */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0.75rem));
 }

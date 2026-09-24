@@ -85,7 +85,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
       role="button"
       tabIndex={0}
       title="Toca para actualizar (Macro o Manual)"
-      className="bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/90 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all flex items-center justify-between gap-3 shadow-sm select-none group cursor-pointer"
+      className="bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/90 active:scale-[0.985] active:brightness-95 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all duration-150 flex items-center justify-between gap-3 shadow-sm select-none group cursor-pointer"
     >
       {/* Izquierda: Icono y nombre */}
       <div className="flex items-center gap-3 min-w-0 flex-1">

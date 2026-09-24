@@ -8,7 +8,7 @@ import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, LayoutGrid, Landmark, Banknote, Wallet, Gem } from 'lucide-react';
 
 export default function App() {
   const [rates, setRates] = useState<ExchangeRates>(() => {
@@ -577,35 +577,67 @@ export default function App() {
       {/* Indicador de estado Offline */}
       <OfflineIndicator />
 
-      {/* Menú inferior completo de Categorías con Fondo Negro */}
+      {/* Menú inferior completo de Categorías con Fondo Negro e Iconos */}
       {categories.length > 1 && (
         <nav
           aria-label="Filtro de categorías"
-          className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-neutral-800/90 shadow-[0_-10px_35px_rgba(0,0,0,0.95)] px-2 sm:px-4 py-2.5 sm:py-3"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-neutral-800/90 shadow-[0_-10px_35px_rgba(0,0,0,0.95)] px-2 sm:px-4 py-2 sm:py-2.5"
         >
-          <div className="max-w-2xl mx-auto flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar">
+          <div className="max-w-2xl mx-auto flex items-center justify-between sm:justify-center gap-1 sm:gap-3 overflow-x-auto no-scrollbar">
             {categories.map((cat) => {
               const isActive = selectedCategory === cat.id;
+              const catId = cat.id.toLowerCase();
+
               return (
                 <button
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex-1 min-w-[76px] py-2.5 sm:py-3 px-3 sm:px-5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap select-none ${
+                  className={`flex-1 min-w-[70px] py-2 sm:py-2.5 px-2.5 sm:px-4 rounded-2xl transition-all duration-150 active:scale-95 flex flex-col items-center justify-center gap-1 select-none group ${
                     isActive
-                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700 shadow-lg ring-1 ring-emerald-500/30'
+                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700/90 shadow-md ring-1 ring-emerald-500/30'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 border border-transparent'
                   }`}
                 >
-                  <span className="tracking-tight">{cat.label}</span>
+                  <div className="flex items-center justify-center">
+                    {catId === 'todos' ? (
+                      <LayoutGrid
+                        className={`w-5 h-5 transition-transform duration-200 ${
+                          isActive ? 'scale-110 text-emerald-400' : 'text-neutral-400 group-hover:text-neutral-200'
+                        }`}
+                      />
+                    ) : catId === 'banco' || catId === 'bancos' ? (
+                      <Landmark
+                        className={`w-5 h-5 transition-transform duration-200 ${
+                          isActive ? 'scale-110 text-emerald-400' : 'text-neutral-400 group-hover:text-neutral-200'
+                        }`}
+                      />
+                    ) : catId === 'efectivo' ? (
+                      <Banknote
+                        className={`w-5 h-5 transition-transform duration-200 ${
+                          isActive ? 'scale-110 text-emerald-400' : 'text-neutral-400 group-hover:text-neutral-200'
+                        }`}
+                      />
+                    ) : catId === 'binance' || catId.includes('cripto') || catId.includes('digital') ? (
+                      <Gem
+                        className={`w-5 h-5 transition-transform duration-200 ${
+                          isActive ? 'scale-110 text-emerald-400' : 'text-neutral-400 group-hover:text-neutral-200'
+                        }`}
+                      />
+                    ) : (
+                      <Wallet
+                        className={`w-5 h-5 transition-transform duration-200 ${
+                          isActive ? 'scale-110 text-emerald-400' : 'text-neutral-400 group-hover:text-neutral-200'
+                        }`}
+                      />
+                    )}
+                  </div>
                   <span
-                    className={`text-[11px] sm:text-xs px-2 py-0.5 rounded-full font-mono font-bold shrink-0 ${
-                      isActive
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-neutral-900 text-neutral-400 border border-neutral-800'
+                    className={`text-xs sm:text-[13px] font-semibold tracking-tight transition-colors ${
+                      isActive ? 'text-white' : 'text-neutral-400 group-hover:text-neutral-200'
                     }`}
                   >
-                    {cat.count}
+                    {cat.label}
                   </span>
                 </button>
               );
