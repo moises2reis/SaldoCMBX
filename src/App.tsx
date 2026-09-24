@@ -509,10 +509,10 @@ export default function App() {
       {/* Indicador de estado Offline */}
       <OfflineIndicator />
 
-      {/* Menú inferior fijo de Categorías tipo botones */}
+      {/* Menú inferior flotante de Categorías tipo Isla en Negro Vehículo */}
       {categories.length > 1 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-xl border-t border-slate-800/80 px-3 pt-2 pb-2.5 sm:pb-3 shadow-2xl">
-          <div className="max-w-md mx-auto flex items-center justify-between gap-1 p-1 bg-slate-900/95 border border-slate-800/90 rounded-2xl shadow-inner">
+        <div className="fixed bottom-3 sm:bottom-4 left-0 right-0 z-40 px-3 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto max-w-[96vw] sm:max-w-lg overflow-x-auto p-1 bg-black border border-neutral-800/90 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.95)] flex items-center gap-1">
             {categories.map((cat) => {
               const isActive = selectedCategory === cat.id;
               return (
@@ -520,18 +520,18 @@ export default function App() {
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap select-none ${
+                  className={`flex-1 min-w-[70px] sm:min-w-[84px] py-1.5 sm:py-2 px-2.5 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap select-none ${
                     isActive
-                      ? 'bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700 shadow-md ring-1 ring-emerald-500/20'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 border border-transparent'
                   }`}
                 >
                   <span className="truncate">{cat.label}</span>
                   <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-medium shrink-0 ${
+                    className={`text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-full font-mono font-medium shrink-0 ${
                       isActive
                         ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-slate-800/90 text-slate-500'
+                        : 'bg-neutral-900 text-neutral-500 border border-neutral-800'
                     }`}
                   >
                     {cat.count}

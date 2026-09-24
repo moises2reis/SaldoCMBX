@@ -51,7 +51,7 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
       </div>
 
       {/* Botones de las tasas: Más pequeños, alineados y centrados en el medio */}
-      <div className="flex justify-center w-full pt-0.5">
+      <div className="flex justify-center w-full pt-0.5 pb-1">
         <div className="inline-flex p-0.5 bg-slate-900 border border-slate-800 rounded-xl shadow-inner text-[11px]">
           {/* Toggle Dólar USD */}
           <button
@@ -112,8 +112,8 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
         </div>
       </div>
 
-      {/* Resumen Total: Total en Dólares ($) con botón de ojo para ocultar/mostrar fondos */}
-      <div className="pt-0.5">
+      {/* Resumen Total: Espacio intermedio más amplio arriba del total del saldo */}
+      <div className="pt-3 sm:pt-4">
         {categoryLabel && (
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">
             {categoryLabel === 'Todos' ? 'Total General' : `Total ${categoryLabel}`}
