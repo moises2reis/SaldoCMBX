@@ -22,6 +22,76 @@ export function formatRate(rate: number): string {
   }).format(rate);
 }
 
+/**
+ * Formatea una fecha de tasa a formato abreviado sin badge:
+ * ej. "Jueves, 24 Septiembre 2026" -> "Jue, 24 sep 2026"
+ */
+export function formatShortDate(val?: string): string {
+  if (!val) return '';
+  const str = val.trim();
+  if (!str) return '';
+
+  const dayMap: Record<string, string> = {
+    lunes: 'Lun',
+    martes: 'Mar',
+    miércoles: 'Mié',
+    miercoles: 'Mié',
+    jueves: 'Jue',
+    viernes: 'Vie',
+    sábado: 'Sáb',
+    sabado: 'Sáb',
+    domingo: 'Dom',
+  };
+
+  const monthMap: Record<string, string> = {
+    enero: 'ene',
+    febrero: 'feb',
+    marzo: 'mar',
+    abril: 'abr',
+    mayo: 'may',
+    junio: 'jun',
+    julio: 'jul',
+    agosto: 'ago',
+    septiembre: 'sep',
+    setiembre: 'sep',
+    octubre: 'oct',
+    noviembre: 'nov',
+    diciembre: 'dic',
+  };
+
+  // Caso: "Jueves, 24 Septiembre 2026" o "Jueves, 24 de Septiembre de 2026"
+  const fullTextMatch = str.match(
+    /^([A-Za-záéíóúÁÉÍÓÚñÑ]+)[,\s]+(\d{1,2})(?:\s+de)?\s+([A-Za-záéíóúÁÉÍÓÚñÑ]+)(?:\s+de)?\s+(\d{4})/i
+  );
+  if (fullTextMatch) {
+    const rawDayName = fullTextMatch[1].toLowerCase();
+    const dayNum = fullTextMatch[2];
+    const rawMonthName = fullTextMatch[3].toLowerCase();
+    const year = fullTextMatch[4];
+
+    const shortDay = dayMap[rawDayName] || fullTextMatch[1].slice(0, 3);
+    const shortMonth = monthMap[rawMonthName] || fullTextMatch[3].slice(0, 3).toLowerCase();
+    return `${shortDay}, ${dayNum} ${shortMonth} ${year}`;
+  }
+
+  // Caso: "24/09/2026"
+  const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const monthIdx = parseInt(dmyMatch[2], 10) - 1;
+    const year = dmyMatch[3];
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const d = new Date(parseInt(year, 10), monthIdx, day);
+    const dayName = !isNaN(d.getTime()) ? days[d.getDay()] : '';
+    return dayName
+      ? `${dayName}, ${day} ${months[monthIdx] || ''} ${year}`
+      : `${day} ${months[monthIdx] || ''} ${year}`;
+  }
+
+  return str;
+}
+
 export function formatBs(amount: number): string {
   const val = isNaN(amount) || amount === null || amount === undefined ? 0 : amount;
   if (Math.abs(val) < 0.00001) return '-';

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ForeignCurrency } from '../types/dashboard';
-import { formatBs, formatUSD, formatRate } from '../utils/formatters';
+import { formatBs, formatUSD, formatRate, formatShortDate } from '../utils/formatters';
 import { Eye, EyeOff } from 'lucide-react';
 
 interface SummaryHeaderProps {
@@ -31,91 +31,91 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
   onToggleHideBalances,
   categoryLabel,
 }) => {
+  const shortDate = formatShortDate(fechaValor);
+
   return (
-    <header className="space-y-4 pb-5 border-b border-slate-800/80">
-      {/* Barra superior: Título con Fecha a la derecha, y Toggle a la derecha */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Izquierda: Título con fecha de la tasa a la derecha */}
-        <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
+    <header className="space-y-3 pb-1">
+      {/* Barra superior: Título ComboxBanks + Fecha resumida simple a la derecha sin badge */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
             ComboxBanks
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           </h1>
-          {fechaValor && (
-            <span className="text-xs sm:text-sm text-slate-400 font-mono tracking-tight bg-slate-900/90 border border-slate-800/80 px-2.5 py-0.5 rounded-lg shadow-sm">
-              {fechaValor}
+          {shortDate && (
+            <span className="text-xs sm:text-sm text-slate-400 font-mono tracking-tight font-normal">
+              {shortDate}
             </span>
           )}
         </div>
+      </div>
 
-        {/* Derecha: Toggle Dólar / Euro / P2P */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {/* Segmented Toggle USD / EUR / P2P */}
-          <div className="inline-flex p-1 bg-slate-900 border border-slate-800 rounded-2xl shadow-inner">
-            {/* Toggle Dólar USD */}
-            <button
-              type="button"
-              onClick={() => onSelectForeignCurrency('USD')}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition-all flex items-center gap-1.5 ${
-                foreignCurrency === 'USD'
-                  ? 'bg-slate-950 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 bg-transparent'
-              }`}
-              title={`Tasa Dólar BCV: ${formatRate(bcvUsd)}`}
-            >
-              <span className={foreignCurrency === 'USD' ? 'text-white font-bold' : 'text-slate-400'}>
-                USD
-              </span>
-              <span className="font-bold tabular-nums">
-                {formatRate(bcvUsd)}
-              </span>
-            </button>
+      {/* Botones de las tasas: Más pequeños, alineados y centrados en el medio */}
+      <div className="flex justify-center w-full pt-0.5">
+        <div className="inline-flex p-0.5 bg-slate-900 border border-slate-800 rounded-xl shadow-inner text-[11px]">
+          {/* Toggle Dólar USD */}
+          <button
+            type="button"
+            onClick={() => onSelectForeignCurrency('USD')}
+            className={`px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all flex items-center gap-1.5 ${
+              foreignCurrency === 'USD'
+                ? 'bg-slate-950 text-white shadow-sm font-semibold border border-slate-700/50'
+                : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
+            }`}
+            title={`Tasa Dólar BCV: ${formatRate(bcvUsd)}`}
+          >
+            <span className={foreignCurrency === 'USD' ? 'text-white font-bold' : 'text-slate-400'}>
+              USD
+            </span>
+            <span className="font-semibold tabular-nums">
+              {formatRate(bcvUsd)}
+            </span>
+          </button>
 
-            {/* Toggle Euro EUR */}
-            <button
-              type="button"
-              onClick={() => onSelectForeignCurrency('EUR')}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition-all flex items-center gap-1.5 ${
-                foreignCurrency === 'EUR'
-                  ? 'bg-slate-950 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 bg-transparent'
-              }`}
-              title={`Tasa Euro BCV: ${formatRate(bcvEur)}`}
-            >
-              <span className={foreignCurrency === 'EUR' ? 'text-white font-bold' : 'text-slate-400'}>
-                EUR
-              </span>
-              <span className="font-bold tabular-nums">
-                {formatRate(bcvEur)}
-              </span>
-            </button>
+          {/* Toggle Euro EUR */}
+          <button
+            type="button"
+            onClick={() => onSelectForeignCurrency('EUR')}
+            className={`px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all flex items-center gap-1.5 ${
+              foreignCurrency === 'EUR'
+                ? 'bg-slate-950 text-white shadow-sm font-semibold border border-slate-700/50'
+                : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
+            }`}
+            title={`Tasa Euro BCV: ${formatRate(bcvEur)}`}
+          >
+            <span className={foreignCurrency === 'EUR' ? 'text-white font-bold' : 'text-slate-400'}>
+              EUR
+            </span>
+            <span className="font-semibold tabular-nums">
+              {formatRate(bcvEur)}
+            </span>
+          </button>
 
-            {/* Toggle Binance P2P */}
-            <button
-              type="button"
-              onClick={() => onSelectForeignCurrency('P2P')}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition-all flex items-center gap-1.5 ${
-                foreignCurrency === 'P2P'
-                  ? 'bg-slate-950 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 bg-transparent'
-              }`}
-              title={`Tasa Binance P2P: ${formatRate(binanceP2p)}`}
-            >
-              <span className={foreignCurrency === 'P2P' ? 'text-white font-bold' : 'text-slate-400'}>
-                P2P
-              </span>
-              <span className="font-bold tabular-nums">
-                {formatRate(binanceP2p)}
-              </span>
-            </button>
-          </div>
+          {/* Toggle Binance P2P */}
+          <button
+            type="button"
+            onClick={() => onSelectForeignCurrency('P2P')}
+            className={`px-2.5 py-1 rounded-lg font-mono text-[11px] transition-all flex items-center gap-1.5 ${
+              foreignCurrency === 'P2P'
+                ? 'bg-slate-950 text-white shadow-sm font-semibold border border-slate-700/50'
+                : 'text-slate-400 hover:text-slate-200 bg-transparent border border-transparent'
+            }`}
+            title={`Tasa Binance P2P: ${formatRate(binanceP2p)}`}
+          >
+            <span className={foreignCurrency === 'P2P' ? 'text-white font-bold' : 'text-slate-400'}>
+              P2P
+            </span>
+            <span className="font-semibold tabular-nums">
+              {formatRate(binanceP2p)}
+            </span>
+          </button>
         </div>
       </div>
 
       {/* Resumen Total: Total en Dólares ($) con botón de ojo para ocultar/mostrar fondos */}
-      <div className="pt-1">
+      <div className="pt-0.5">
         {categoryLabel && (
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">
             {categoryLabel === 'Todos' ? 'Total General' : `Total ${categoryLabel}`}
           </div>
         )}

@@ -459,12 +459,12 @@ export default function App() {
           )}
         </div>
 
-        {/* Lista compacta y limpia de bancos */}
+        {/* Lista compacta y limpia de cuentas */}
         <div className="space-y-2.5 pt-5 pb-6">
           <div className="px-1 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Saldos Bancarios
+                Lista de Saldos
               </h2>
               <button
                 type="button"
