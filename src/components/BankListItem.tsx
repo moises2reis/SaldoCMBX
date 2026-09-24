@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { formatBs, formatUSD, convertValue, formatSmartUpdateTime } from '../utils/formatters';
+import { formatBs, formatUSD, convertValue, formatSmartUpdateTime, isOlderThanOneHourAndHalf } from '../utils/formatters';
 import { Landmark, RefreshCw, Check, Clock, Gem } from 'lucide-react';
 
 interface BankListItemProps {
@@ -62,6 +62,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   // Subtítulo: para Binance mostrar específicamente 1272204580
   const displaySubtitle = isBinance ? '1272204580' : account.accountNumber;
   const timeAgoText = formatSmartUpdateTime(account.lastSync);
+  const isOutdated = isOlderThanOneHourAndHalf(account.lastSync);
   const isZero = !hideBalances && Math.abs(amountUsd) < 0.001 && Math.abs(amountBs) < 0.001;
 
   const handleRefreshClick = (e: React.MouseEvent) => {
@@ -143,8 +144,12 @@ export const BankListItem: React.FC<BankListItemProps> = ({
 
           {/* Tiempo transcurrido debajo del monto (solo si existe fecha) */}
           {timeAgoText ? (
-            <div className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono text-slate-500 tabular-nums mt-0.5">
-              <Clock className="w-2.5 h-2.5 text-slate-500" />
+            <div
+              className={`inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono tabular-nums mt-0.5 ${
+                isOutdated ? 'text-amber-400 font-medium' : 'text-slate-500'
+              }`}
+            >
+              <Clock className={`w-2.5 h-2.5 ${isOutdated ? 'text-amber-400' : 'text-slate-500'}`} />
               <span>{timeAgoText}</span>
             </div>
           ) : null}
@@ -160,30 +165,36 @@ export const BankListItem: React.FC<BankListItemProps> = ({
               ? `Actualizando ${account.bankShort}... Protección activa (${protectionSeconds}s)`
               : isBlocked
               ? `Protección activa: espera ${protectionSeconds}s para actualizar otros bancos`
+              : isOutdated
+              ? `Actualizar ${account.bankShort} (saldo desactualizado > 1h 30m)`
               : `Actualizar ${account.bankShort}`
           }
           aria-label={`Actualizar ${account.bankShort}`}
-          className={`min-w-9 h-9 px-2.5 rounded-xl border transition-all flex items-center justify-center gap-1 shrink-0 ${
+          className={`h-7 sm:h-7.5 ${
+            isSyncing ? 'min-w-7 px-2' : 'w-7 sm:w-7.5'
+          } rounded-full border transition-all flex items-center justify-center gap-1 shrink-0 ${
             justUpdated
               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
               : isSyncing
               ? 'bg-slate-800 border-amber-500/40 text-amber-400 cursor-wait'
               : isBlocked
               ? 'bg-slate-900/40 border-slate-800/60 text-slate-600 opacity-40 cursor-not-allowed'
+              : isOutdated
+              ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 hover:border-amber-500/50 text-amber-400 hover:text-amber-300 active:scale-95'
               : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-white active:scale-95'
           }`}
         >
           {justUpdated ? (
-            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
           ) : isSyncing ? (
             <>
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
-              <span className="text-[10px] font-mono font-bold text-amber-400">{protectionSeconds}s</span>
+              <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+              <span className="text-[9px] font-mono font-bold text-amber-400">{protectionSeconds}s</span>
             </>
           ) : isBlocked ? (
-            <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600" />
           ) : (
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           )}
         </button>
       </div>

@@ -11,6 +11,21 @@ interface SimpleEditModalProps {
   onSave: (val: number) => void;
 }
 
+const formatSpanishNumber = (num: number): string => {
+  if (num === 0) return '0';
+  return new Intl.NumberFormat('es-VE', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(num);
+};
+
+const parseSpanishNumber = (str: string): number => {
+  if (!str) return 0;
+  const clean = str.replace(/\./g, '').replace(/,/g, '.').trim();
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
+};
+
 export const SimpleEditModal: React.FC<SimpleEditModalProps> = ({
   isOpen,
   onClose,
@@ -20,17 +35,53 @@ export const SimpleEditModal: React.FC<SimpleEditModalProps> = ({
   currencySymbol,
   onSave,
 }) => {
-  const [val, setVal] = useState(initialValue.toString());
+  const [val, setVal] = useState(formatSpanishNumber(initialValue));
 
   useEffect(() => {
-    setVal(initialValue.toString());
+    setVal(formatSpanishNumber(initialValue));
   }, [initialValue, isOpen]);
 
   if (!isOpen) return null;
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputVal = e.target.value;
+    if (!inputVal) {
+      setVal('');
+      return;
+    }
+
+    if (/[^\d.,]/.test(inputVal)) return;
+
+    const endsWithSeparator = inputVal.endsWith(',') || inputVal.endsWith('.');
+
+    if (inputVal.includes(',')) {
+      const [intPart, ...decParts] = inputVal.split(',');
+      const cleanInt = intPart.replace(/\D/g, '');
+      const cleanDec = decParts.join('').replace(/\D/g, '').slice(0, 4);
+      const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+      if (endsWithSeparator && cleanDec === '') {
+        setVal(`${formattedInt || '0'},`);
+      } else {
+        setVal(cleanDec !== '' ? `${formattedInt || '0'},${cleanDec}` : formattedInt);
+      }
+    } else if (inputVal.includes('.')) {
+      if (endsWithSeparator) {
+        const cleanInt = inputVal.slice(0, -1).replace(/\D/g, '');
+        const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+        setVal(`${formattedInt || '0'},`);
+      } else {
+        const cleanInt = inputVal.replace(/\D/g, '');
+        setVal(cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '');
+      }
+    } else {
+      const cleanInt = inputVal.replace(/\D/g, '');
+      setVal(cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '');
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseFloat(val);
+    const num = parseSpanishNumber(val);
     if (!isNaN(num) && num >= 0) {
       onSave(num);
       onClose();
@@ -55,12 +106,12 @@ export const SimpleEditModal: React.FC<SimpleEditModalProps> = ({
             <label className="block text-xs text-slate-400 mb-1">{label}</label>
             <div className="relative">
               <input
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={val}
-                onChange={(e) => setVal(e.target.value)}
+                onChange={handleInputChange}
                 autoFocus
+                placeholder="0,00"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-lg font-mono text-white focus:outline-none focus:border-emerald-500"
               />
               <span className="absolute right-3 top-3 text-xs font-mono text-slate-400">

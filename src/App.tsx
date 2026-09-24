@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BankAccount, ExchangeRates, ForeignCurrency } from './types/dashboard';
 import { INITIAL_ACCOUNTS, INITIAL_RATES } from './constants/initialData';
 import { fetchBalancesAndRates, syncAllAccounts, syncSingleBank, updateBankBalance } from './services/api';
-import { convertValue } from './utils/formatters';
+import { convertValue, isOlderThanMinutes } from './utils/formatters';
 import { SummaryHeader } from './components/SummaryHeader';
 import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
@@ -37,6 +37,7 @@ export default function App() {
   });
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncingBankId, setSyncingBankId] = useState<string | null>(null);
+  const [monitoredBankId, setMonitoredBankId] = useState<string | null>(null);
   const [binanceSyncing, setBinanceSyncing] = useState<boolean>(false);
   const [protectionSeconds, setProtectionSeconds] = useState<number>(0);
   const [justUpdatedBankId, setJustUpdatedBankId] = useState<string | null>(null);
@@ -90,8 +91,10 @@ export default function App() {
       if (data?.accounts && data.accounts.length > 0) {
         setAccounts(data.accounts);
       }
+      return data;
     } catch (err) {
       console.warn('Error fetching live data:', err);
+      return null;
     } finally {
       if (!silent) setIsSyncing(false);
     }
@@ -103,20 +106,43 @@ export default function App() {
     loadData(hasCached);
   }, [loadData]);
 
-  // Manejador del temporizador de 30 segundos de protección global
+  // Actualización inteligente al regresar a la pestaña activa
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadData(true);
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => window.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loadData]);
+
+  // Manejador del temporizador de 20 segundos de protección global
   useEffect(() => {
     if (protectionSeconds <= 0) return;
     const timer = setInterval(() => {
       setProtectionSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          // Al culminar los 30 segundos, recargar datos y liberar bloqueo
-          loadData(true);
-          if (syncingBankId) {
-            setJustUpdatedBankId(syncingBankId);
-            setTimeout(() => setJustUpdatedBankId(null), 3000);
-          }
+          // Al culminar los 20 segundos, recargar datos desde Apps Script
+          const currentBank = syncingBankId;
           setSyncingBankId(null);
+
+          loadData(true).then((data) => {
+            if (currentBank && data?.accounts) {
+              const updated = data.accounts.find((a) => a.id === currentBank);
+              // Si la fecha es reciente (< 2 minutos), celebrar actualización
+              if (updated && !isOlderThanMinutes(updated.lastSync, 2)) {
+                setJustUpdatedBankId(currentBank);
+                setTimeout(() => setJustUpdatedBankId(null), 3000);
+                setMonitoredBankId(null);
+              } else if (currentBank) {
+                // Si la fecha aún supera los 2 minutos, activar reintentos inteligentes
+                setMonitoredBankId(currentBank);
+              }
+            }
+          });
+
           return 0;
         }
         return prev - 1;
@@ -125,6 +151,38 @@ export default function App() {
 
     return () => clearInterval(timer);
   }, [protectionSeconds, syncingBankId, loadData]);
+
+  // Reintentos inteligentes: si se acaba de actualizar un saldo y los minutos aún superan 2 minutos,
+  // consultar a Google Apps Script cada 5 segundos hasta que se refleje la actualización
+  useEffect(() => {
+    if (!monitoredBankId) return;
+
+    let attempts = 0;
+    const maxAttempts = 10; // Hasta 50 segundos de reintentos silenciosos
+
+    const interval = setInterval(async () => {
+      attempts += 1;
+      const data = await loadData(true);
+      if (data?.accounts) {
+        const acc = data.accounts.find((a) => a.id === monitoredBankId);
+        if (acc && !isOlderThanMinutes(acc.lastSync, 2)) {
+          // ¡Actualización fresca detectada desde Google Sheet / Apps Script!
+          setJustUpdatedBankId(monitoredBankId);
+          setTimeout(() => setJustUpdatedBankId(null), 3000);
+          setMonitoredBankId(null);
+          clearInterval(interval);
+          return;
+        }
+      }
+
+      if (attempts >= maxAttempts) {
+        setMonitoredBankId(null);
+        clearInterval(interval);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [monitoredBankId, loadData]);
 
   // Tasa activa según la moneda seleccionada (USD, EUR o P2P)
   const bcvUsdRate = rates.bcvUsd || rates.bcv || 853.50;
@@ -204,11 +262,11 @@ export default function App() {
       return;
     }
 
-    // 2. Si son bancos tradicionales venezolanos con MacroDroid SMS (30s)
+    // 2. Si son bancos tradicionales venezolanos con MacroDroid SMS (20s)
     if (protectionSeconds > 0) return;
 
     setSyncingBankId(bankId);
-    setProtectionSeconds(30);
+    setProtectionSeconds(20);
 
     try {
       // Disparar MacroDroid si existe link para este banco

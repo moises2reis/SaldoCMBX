@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { X, Check, Landmark, Gem, Send, Loader2 } from 'lucide-react';
+import { X, Check, Landmark, Gem, Loader2 } from 'lucide-react';
 
 interface EditBankBalanceModalProps {
   isOpen: boolean;
@@ -8,6 +8,22 @@ interface EditBankBalanceModalProps {
   onClose: () => void;
   onSave: (bankName: string, monto: number, bankId: string) => Promise<void>;
 }
+
+// Formateador con puntos de miles y coma decimal
+const formatSpanishNumber = (num: number): string => {
+  if (num === 0) return '0';
+  return new Intl.NumberFormat('es-VE', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(num);
+};
+
+const parseSpanishNumber = (str: string): number => {
+  if (!str) return 0;
+  const clean = str.replace(/\./g, '').replace(/,/g, '.').trim();
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
+};
 
 export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
   isOpen,
@@ -20,7 +36,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
   useEffect(() => {
     if (account) {
-      setBalanceInput(String(account.balanceNative));
+      setBalanceInput(formatSpanishNumber(account.balanceNative));
     }
   }, [account, isOpen]);
 
@@ -33,10 +49,47 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
   const currencyUnit = isBinance ? 'USDT' : account.nativeCurrency === 'USD' ? 'USD' : 'Bs.';
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputVal = e.target.value;
+    if (!inputVal) {
+      setBalanceInput('');
+      return;
+    }
+
+    // Permitir solo dígitos, puntos y comas
+    if (/[^\d.,]/.test(inputVal)) return;
+
+    const endsWithSeparator = inputVal.endsWith(',') || inputVal.endsWith('.');
+
+    if (inputVal.includes(',')) {
+      const [intPart, ...decParts] = inputVal.split(',');
+      const cleanInt = intPart.replace(/\D/g, '');
+      const cleanDec = decParts.join('').replace(/\D/g, '').slice(0, 4);
+      const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+      if (endsWithSeparator && cleanDec === '') {
+        setBalanceInput(`${formattedInt || '0'},`);
+      } else {
+        setBalanceInput(cleanDec !== '' ? `${formattedInt || '0'},${cleanDec}` : formattedInt);
+      }
+    } else if (inputVal.includes('.')) {
+      if (endsWithSeparator) {
+        const cleanInt = inputVal.slice(0, -1).replace(/\D/g, '');
+        const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+        setBalanceInput(`${formattedInt || '0'},`);
+      } else {
+        const cleanInt = inputVal.replace(/\D/g, '');
+        setBalanceInput(cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '');
+      }
+    } else {
+      const cleanInt = inputVal.replace(/\D/g, '');
+      setBalanceInput(cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseFloat(balanceInput.replace(/,/g, '.'));
-    if (isNaN(num) || num < 0) return;
+    const num = parseSpanishNumber(balanceInput);
+    if (num < 0) return;
 
     setIsSubmitting(true);
     try {
@@ -93,26 +146,19 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
             </label>
             <div className="relative">
               <input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={balanceInput}
-                onChange={(e) => setBalanceInput(e.target.value)}
+                onChange={handleInputChange}
                 autoFocus
                 disabled={isSubmitting}
-                placeholder="0.00"
+                placeholder="0,00"
                 className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-3.5 py-3 text-xl font-mono font-bold text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
               />
               <span className="absolute right-3.5 top-3.5 text-xs font-mono font-semibold text-slate-400">
                 {currencyUnit}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-2 font-mono flex items-center gap-1.5">
-              <Send className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span>
-                Se enviará webhook a Google Apps Script: <strong className="text-slate-300">exe?banco={account.bankShort}&monto=[saldo]</strong>
-              </span>
-            </p>
           </div>
 
           {/* Botones de acción */}
@@ -127,7 +173,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !balanceInput}
+              disabled={isSubmitting || balanceInput === ''}
               className="px-4 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-emerald-950/50"
             >
               {isSubmitting ? (

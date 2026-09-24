@@ -117,13 +117,26 @@ export function parseFlexibleDate(val: unknown): Date | null {
   return null;
 }
 
-export function isOlderThanOneHour(val: unknown): boolean {
+export function isOlderThanMinutes(val: unknown, minutes: number): boolean {
   if (!val) return true;
   const date = parseFlexibleDate(val);
   if (!date) return true;
   const diffMs = Date.now() - date.getTime();
-  return diffMs > 60 * 60 * 1000;
+  return diffMs > minutes * 60 * 1000;
 }
+
+export function isOlderThanOneHour(val: unknown): boolean {
+  return isOlderThanMinutes(val, 60);
+}
+
+export function isOlderThanOneHourAndHalf(val: unknown): boolean {
+  return isOlderThanMinutes(val, 90); // Supera 1 hora y media (90 minutos)
+}
+
+const MONTHS_ES = [
+  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
+];
 
 export function formatSmartUpdateTime(val: unknown): string {
   if (!val) return '';
@@ -134,16 +147,19 @@ export function formatSmartUpdateTime(val: unknown): string {
   const diffMs = Math.max(0, now - date.getTime());
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) return 'Hace < 1 min';
-  if (diffMins === 1) return 'Hace 1 min';
-  if (diffMins < 60) return `Hace ${diffMins} min`;
+  // Menos de 1 hora: mostrar minutos
+  if (diffMins < 1) return '< 1 min';
+  if (diffMins === 1) return '1 min';
+  if (diffMins < 60) return `${diffMins} min`;
 
+  // Entre 1 hora y 24 horas: mostrar solo las horas (1h, 2h, 3h, etc.)
   const hours = Math.floor(diffMins / 60);
-  const remainingMins = diffMins % 60;
   if (hours < 24) {
-    return remainingMins > 0 ? `Hace ${hours}h ${remainingMins} min` : `Hace ${hours}h`;
+    return `${hours}h`;
   }
 
-  const days = Math.floor(hours / 24);
-  return `Hace ${days}d`;
+  // Más de 24 horas: mostrar fecha con formato "08 Ago"
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = MONTHS_ES[date.getMonth()] || '';
+  return `${day} ${month}`;
 }
