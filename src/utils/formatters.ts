@@ -203,11 +203,6 @@ export function isOlderThanOneHourAndHalf(val: unknown): boolean {
   return isOlderThanMinutes(val, 90); // Supera 1 hora y media (90 minutos)
 }
 
-const MONTHS_ES = [
-  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
-];
-
 export function formatSmartUpdateTime(val: unknown): string {
   if (!val) return '';
   const date = parseFlexibleDate(val);
@@ -228,8 +223,11 @@ export function formatSmartUpdateTime(val: unknown): string {
     return `${hours}h`;
   }
 
-  // Más de 24 horas: mostrar fecha con formato "08 Ago"
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = MONTHS_ES[date.getMonth()] || '';
-  return `${day} ${month}`;
+  // Mayor o igual a 24 horas: Ayer o X días pasados
+  const days = Math.floor(hours / 24);
+  if (days === 1) {
+    return 'Ayer';
+  }
+
+  return `${days} días`;
 }

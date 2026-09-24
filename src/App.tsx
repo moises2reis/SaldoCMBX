@@ -403,10 +403,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 pb-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 pb-24 sm:pb-28">
       <div className="max-w-2xl mx-auto">
-        {/* Encabezado fijo / estático: Nombre, Tasas, Totales y Categorías */}
-        <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md pt-4 sm:pt-6 pb-3.5 space-y-4 border-b border-slate-800/80 -mx-4 px-4 shadow-lg shadow-slate-950/40">
+        {/* Encabezado fijo / estático: Nombre, Tasas y Totales */}
+        <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md pt-4 sm:pt-6 pb-2.5 space-y-3 -mx-4 px-4 shadow-lg shadow-slate-950/40">
           {/* Encabezado: Total en Dólares ($) en verde arriba, Total en Bs en gris abajo */}
           <SummaryHeader
             totalBs={totalBs}
@@ -425,42 +425,10 @@ export default function App() {
 
           {/* Botón / Banner de instalación PWA para iOS y Android */}
           <PWAInstallButton />
-
-          {/* Suiche de Categorías */}
-          {categories.length > 1 && (
-            <div className="flex items-center gap-1.5 p-1 bg-slate-900/90 border border-slate-800/80 rounded-2xl overflow-x-auto no-scrollbar shadow-inner">
-              {categories.map((cat) => {
-                const isActive = selectedCategory === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat.id)}
-                    className={`flex-1 min-w-[76px] py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap select-none ${
-                      isActive
-                        ? 'bg-slate-800 text-emerald-400 border border-slate-700/70 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
-                    }`}
-                  >
-                    <span>{cat.label}</span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-medium ${
-                        isActive
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-slate-800/90 text-slate-500'
-                      }`}
-                    >
-                      {cat.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
 
         {/* Lista compacta y limpia de cuentas */}
-        <div className="space-y-2.5 pt-5 pb-6">
+        <div className="space-y-2.5 pt-4 pb-6">
           <div className="px-1 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -540,6 +508,40 @@ export default function App() {
 
       {/* Indicador de estado Offline */}
       <OfflineIndicator />
+
+      {/* Menú inferior fijo de Categorías tipo botones */}
+      {categories.length > 1 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-xl border-t border-slate-800/80 px-3 pt-2 pb-2.5 sm:pb-3 shadow-2xl">
+          <div className="max-w-md mx-auto flex items-center justify-between gap-1 p-1 bg-slate-900/95 border border-slate-800/90 rounded-2xl shadow-inner">
+            {categories.map((cat) => {
+              const isActive = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap select-none ${
+                    isActive
+                      ? 'bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                  }`}
+                >
+                  <span className="truncate">{cat.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-medium shrink-0 ${
+                      isActive
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-slate-800/90 text-slate-500'
+                    }`}
+                  >
+                    {cat.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
