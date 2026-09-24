@@ -464,7 +464,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 pb-24 sm:pb-28">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 pb-32 sm:pb-36">
       <div className="max-w-2xl mx-auto">
         {/* Encabezado fijo / estático: Nombre, Tasas y Totales */}
         <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md pt-4 sm:pt-6 pb-2.5 space-y-3 -mx-4 px-4 shadow-lg shadow-slate-950/40">
@@ -577,10 +577,13 @@ export default function App() {
       {/* Indicador de estado Offline */}
       <OfflineIndicator />
 
-      {/* Menú inferior flotante de Categorías tipo Isla en Negro Vehículo */}
+      {/* Menú inferior completo de Categorías con Fondo Negro */}
       {categories.length > 1 && (
-        <div className="fixed bottom-3 sm:bottom-4 left-0 right-0 z-40 px-3 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto max-w-[96vw] sm:max-w-xl overflow-x-auto p-1.5 bg-black border border-neutral-800/90 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.95)] flex items-center gap-1.5 no-scrollbar">
+        <nav
+          aria-label="Filtro de categorías"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-neutral-800/90 shadow-[0_-10px_35px_rgba(0,0,0,0.95)] px-2 sm:px-4 py-2.5 sm:py-3"
+        >
+          <div className="max-w-2xl mx-auto flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar">
             {categories.map((cat) => {
               const isActive = selectedCategory === cat.id;
               return (
@@ -588,18 +591,18 @@ export default function App() {
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`shrink-0 sm:flex-1 py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-2 whitespace-nowrap select-none ${
+                  className={`flex-1 min-w-[76px] py-2.5 sm:py-3 px-3 sm:px-5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap select-none ${
                     isActive
-                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700 shadow-md ring-1 ring-emerald-500/20'
+                      ? 'bg-neutral-900 text-emerald-400 border border-neutral-700 shadow-lg ring-1 ring-emerald-500/30'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 border border-transparent'
                   }`}
                 >
-                  <span className="whitespace-nowrap tracking-tight">{cat.label}</span>
+                  <span className="tracking-tight">{cat.label}</span>
                   <span
-                    className={`text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-full font-mono font-medium shrink-0 ${
+                    className={`text-[11px] sm:text-xs px-2 py-0.5 rounded-full font-mono font-bold shrink-0 ${
                       isActive
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-neutral-900 text-neutral-500 border border-neutral-800'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-neutral-900 text-neutral-400 border border-neutral-800'
                     }`}
                   >
                     {cat.count}
@@ -608,7 +611,7 @@ export default function App() {
               );
             })}
           </div>
-        </div>
+        </nav>
       )}
     </div>
   );
