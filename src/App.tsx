@@ -512,7 +512,7 @@ export default function App() {
       {/* Menú inferior flotante de Categorías tipo Isla en Negro Vehículo */}
       {categories.length > 1 && (
         <div className="fixed bottom-3 sm:bottom-4 left-0 right-0 z-40 px-3 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto max-w-[96vw] sm:max-w-lg overflow-x-auto p-1 bg-black border border-neutral-800/90 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.95)] flex items-center gap-1">
+          <div className="pointer-events-auto max-w-[96vw] sm:max-w-xl overflow-x-auto p-1.5 bg-black border border-neutral-800/90 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.95)] flex items-center gap-1.5 no-scrollbar">
             {categories.map((cat) => {
               const isActive = selectedCategory === cat.id;
               return (
@@ -520,13 +520,13 @@ export default function App() {
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex-1 min-w-[70px] sm:min-w-[84px] py-1.5 sm:py-2 px-2.5 sm:px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap select-none ${
+                  className={`shrink-0 sm:flex-1 py-1.5 sm:py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-2 whitespace-nowrap select-none ${
                     isActive
                       ? 'bg-neutral-900 text-emerald-400 border border-neutral-700 shadow-md ring-1 ring-emerald-500/20'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60 border border-transparent'
                   }`}
                 >
-                  <span className="truncate">{cat.label}</span>
+                  <span className="whitespace-nowrap tracking-tight">{cat.label}</span>
                   <span
                     className={`text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-full font-mono font-medium shrink-0 ${
                       isActive
