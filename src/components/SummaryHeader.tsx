@@ -15,6 +15,7 @@ interface SummaryHeaderProps {
   isSyncing?: boolean;
   hideBalances?: boolean;
   onToggleHideBalances?: () => void;
+  categoryLabel?: string;
 }
 
 export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
@@ -28,6 +29,7 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
   fechaValor,
   hideBalances = false,
   onToggleHideBalances,
+  categoryLabel,
 }) => {
   return (
     <header className="space-y-4 pb-5 border-b border-slate-800/80">
@@ -112,6 +114,11 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
 
       {/* Resumen Total: Total en Dólares ($) con botón de ojo para ocultar/mostrar fondos */}
       <div className="pt-1">
+        {categoryLabel && (
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+            {categoryLabel === 'Todos' ? 'Total General' : `Total ${categoryLabel}`}
+          </div>
+        )}
         <div className="flex items-center gap-2.5">
           <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-400 tabular-nums tracking-tight">
             {hideBalances ? '$ ****' : formatUSD(totalForeign)}

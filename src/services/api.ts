@@ -140,6 +140,8 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
           }
           seenIds.add(cleanId);
           const isBinance = rawName.toLowerCase().includes('binance');
+          const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Banco');
+          const rawUsd = item['monto_$'] ?? item.monto_$ ?? item.monto_usd ?? item.monto_dolar;
 
           return {
             id: cleanId,
@@ -148,19 +150,20 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
             bankShort: rawName,
             accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
             accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
+            categoria: rawCategory ? String(rawCategory).trim() : 'Banco',
             nativeCurrency: isBinance ? 'USD' : 'VES',
             balanceNative: parseAmount(item.monto_bs),
+            montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,
             lastSync: item.fecha_actualizacion ? String(item.fecha_actualizacion) : '',
             linkActualizar: item.link_actualizar ? String(item.link_actualizar) : '',
           };
         });
 
-        // Asegurar Binance en la lista con balance enriquecido
-        const binanceData = await getOrFetchBinanceBalance();
+        // Asegurar que Binance esté incluido
+        const binanceData = getLocalBinanceBalance();
         const bIdx = parsedAccounts.findIndex(
           (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
         );
-
         if (bIdx === -1) {
           parsedAccounts.push({
             id: 'binance',
@@ -169,16 +172,22 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
             bankShort: 'BINANCE',
             accountType: 'ID',
             accountNumber: '1272204580',
+            categoria: 'Binance',
             nativeCurrency: 'USD',
             balanceNative: binanceData.totalUsd,
+            montoUsd: binanceData.totalUsd,
             lastSync: binanceData.lastSync || '',
             linkActualizar: '',
           });
         } else {
-          parsedAccounts[bIdx].accountNumber = '1272204580';
-          parsedAccounts[bIdx].accountType = 'ID';
+          if (!parsedAccounts[bIdx].categoria || parsedAccounts[bIdx].categoria === 'Digital') {
+            parsedAccounts[bIdx].categoria = 'Binance';
+          }
           if (binanceData.totalUsd > 0 && parsedAccounts[bIdx].balanceNative === 0) {
             parsedAccounts[bIdx].balanceNative = binanceData.totalUsd;
+          }
+          if (binanceData.totalUsd > 0 && (parsedAccounts[bIdx].montoUsd === undefined || parsedAccounts[bIdx].montoUsd === 0)) {
+            parsedAccounts[bIdx].montoUsd = binanceData.totalUsd;
           }
         }
 
@@ -292,6 +301,7 @@ export async function syncSingleBank(
 export async function updateBankBalance(payload: {
   banco: string;
   monto: number;
+  montoUsd?: number;
   id: string;
 }): Promise<{ success: boolean; accounts?: BankAccount[] }> {
   // 1. Guardar localmente para persistencia en GitHub Pages
@@ -314,9 +324,14 @@ export async function updateBankBalance(payload: {
 
   // 3. Envío directo del Webhook a Google Apps Script (para GitHub Pages)
   try {
-    const directUrl = `${APPSCRIPT_URL}?banco=${encodeURIComponent(payload.banco)}&monto=${encodeURIComponent(
+    let directUrl = `${APPSCRIPT_URL}?banco=${encodeURIComponent(payload.banco)}&monto=${encodeURIComponent(
       payload.monto
-    )}`;
+    )}&monto_bs=${encodeURIComponent(payload.monto)}`;
+    if (payload.montoUsd !== undefined) {
+      directUrl += `&monto_usd=${encodeURIComponent(payload.montoUsd)}&monto_$=${encodeURIComponent(
+        payload.montoUsd
+      )}&monto_dolar=${encodeURIComponent(payload.montoUsd)}`;
+    }
     await fetch(directUrl, { method: 'GET', mode: 'no-cors' }).catch(() => {});
   } catch (err) {
     console.warn('Error enviando webhook directo a Google Apps Script:', err);
@@ -326,18 +341,35 @@ export async function updateBankBalance(payload: {
 }
 
 export async function obtenerTasaBinanceP2P(): Promise<number> {
-  // 1. Intentar vía proxy del servidor
+  // 1. Intentar vía proxy del servidor local
   try {
     const res = await fetch(`/api/rates/binance-p2p?_t=${Date.now()}`);
     if (res.ok) {
       const data = await res.json();
       if (data && typeof data.price === 'number' && data.price > 0) {
+        try {
+          localStorage.setItem('gh_pages_binance_p2p', String(data.price));
+        } catch {}
         return data.price;
       }
     }
   } catch {}
 
-  // 2. Consulta directa P2P de Binance
+  // 2. Intentar vía Supabase Edge Function ('p2p')
+  try {
+    const sbRes = await callSupabase<{ price?: number; rate?: number }>('p2p', {});
+    if (sbRes.success && sbRes.data) {
+      const price = Number(sbRes.data.price || sbRes.data.rate || 0);
+      if (price > 0) {
+        try {
+          localStorage.setItem('gh_pages_binance_p2p', String(price));
+        } catch {}
+        return price;
+      }
+    }
+  } catch {}
+
+  // 3. Consulta directa P2P de Binance
   try {
     const response = await fetch('https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', {
       method: 'POST',
@@ -356,10 +388,25 @@ export async function obtenerTasaBinanceP2P(): Promise<number> {
     if (response.ok) {
       const res = await response.json();
       if (res && res.data && res.data.length > 0 && res.data[0]?.adv?.price) {
-        return parseFloat(res.data[0].adv.price);
+        const parsed = parseFloat(res.data[0].adv.price);
+        if (parsed > 0) {
+          try {
+            localStorage.setItem('gh_pages_binance_p2p', String(parsed));
+          } catch {}
+          return parsed;
+        }
       }
     }
   } catch {}
 
-  return 0;
+  // 4. Leer del cache local en navegador
+  try {
+    const saved = localStorage.getItem('gh_pages_binance_p2p');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (parsed > 0) return parsed;
+    }
+  } catch {}
+
+  return 964.80;
 }

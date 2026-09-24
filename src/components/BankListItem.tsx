@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
 import { formatBs, formatUSD, convertValue, formatSmartUpdateTime, isOlderThanOneHourAndHalf } from '../utils/formatters';
-import { Landmark, RefreshCw, Check, Clock, Gem } from 'lucide-react';
+import { Landmark, RefreshCw, Check, Clock, Gem, Banknote } from 'lucide-react';
 
 interface BankListItemProps {
   account: BankAccount;
@@ -38,32 +38,45 @@ export const BankListItem: React.FC<BankListItemProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // 1. Calcular equivalente dinámico en Bolívares según la tasa seleccionada
-  let amountBs = account.balanceNative;
-  if (account.nativeCurrency === 'USD') {
-    amountBs = convertValue(account.balanceNative, 'USD', 'VES', activeRate);
-  } else if (account.nativeCurrency === 'EUR') {
-    amountBs = convertValue(account.balanceNative, 'EUR', 'VES', activeRate);
-  }
-
-  // 2. Calcular monto en dólares/divisa usando la tasa activa seleccionada
-  const amountUsd =
-    account.nativeCurrency === 'USD'
-      ? account.balanceNative
-      : activeRate > 0
-      ? amountBs / activeRate
-      : 0;
-
+  const isEfectivo = account.categoria?.trim().toLowerCase() === 'efectivo';
   const isBinance =
     account.id === 'binance' ||
     account.bankName.toLowerCase().includes('binance') ||
     account.bankShort.toLowerCase().includes('binance');
 
-  // Subtítulo: para Binance mostrar específicamente 1272204580
-  const displaySubtitle = isBinance ? '1272204580' : account.accountNumber;
+  // Montos individuales para efectivo
+  const cashUsd = account.montoUsd || 0;
+  const cashBs = account.balanceNative || 0;
+
+  // 1. Calcular equivalente dinámico en Bolívares y Dólares
+  let amountBs = account.balanceNative;
+  let amountUsd = 0;
+
+  if (isEfectivo) {
+    // Para efectivo: total en $ es la suma de los dólares en efectivo + los bolívares convertidos a $
+    amountUsd = cashUsd + (activeRate > 0 ? cashBs / activeRate : 0);
+    amountBs = cashBs + (cashUsd * activeRate);
+  } else if (account.nativeCurrency === 'USD') {
+    amountBs = convertValue(account.balanceNative, 'USD', 'VES', activeRate);
+    amountUsd = account.balanceNative;
+  } else if (account.nativeCurrency === 'EUR') {
+    amountBs = convertValue(account.balanceNative, 'EUR', 'VES', activeRate);
+    amountUsd = activeRate > 0 ? amountBs / activeRate : 0;
+  } else {
+    amountUsd = activeRate > 0 ? amountBs / activeRate : 0;
+  }
+
+  // Subtítulo: para Binance mostrar específicamente 1272204580, para efectivo mostrar indicador
+  const displaySubtitle = isBinance
+    ? '1272204580'
+    : account.accountNumber || (isEfectivo ? 'Efectivo / Caja' : '');
+
   const timeAgoText = formatSmartUpdateTime(account.lastSync);
   const isOutdated = isOlderThanOneHourAndHalf(account.lastSync);
-  const isZero = !hideBalances && Math.abs(amountUsd) < 0.001 && Math.abs(amountBs) < 0.001;
+  
+  const isZero = isEfectivo
+    ? !hideBalances && Math.abs(cashUsd) < 0.001 && Math.abs(cashBs) < 0.001
+    : !hideBalances && Math.abs(amountUsd) < 0.001 && Math.abs(amountBs) < 0.001;
 
   const handleRefreshClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -90,7 +103,13 @@ export const BankListItem: React.FC<BankListItemProps> = ({
       onClick={handleCardClick}
       role="button"
       tabIndex={0}
-      title={isBinance ? "Toca para sincronizar Binance" : "Toca para editar saldo y enviar webhook"}
+      title={
+        isBinance
+          ? "Toca para sincronizar Binance"
+          : isEfectivo
+          ? "Toca para editar efectivo ($ y Bs) y enviar webhook"
+          : "Toca para editar saldo y enviar webhook"
+      }
       className={`bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all flex items-center justify-between gap-3 shadow-sm select-none group ${
         isBinance ? 'cursor-default' : 'cursor-pointer'
       }`}
@@ -100,6 +119,8 @@ export const BankListItem: React.FC<BankListItemProps> = ({
         <div className="w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 bg-slate-800/80 border-slate-700/50">
           {isBinance ? (
             <Gem className="w-4 h-4 text-slate-400" />
+          ) : isEfectivo ? (
+            <Banknote className="w-4 h-4 text-slate-400" />
           ) : (
             <Landmark className="w-4 h-4 text-slate-400" />
           )}
@@ -128,6 +149,26 @@ export const BankListItem: React.FC<BankListItemProps> = ({
             <div className="text-sm sm:text-base font-bold font-mono text-slate-500 tabular-nums leading-tight">
               -
             </div>
+          ) : isEfectivo ? (
+            <>
+              {/* Tarjeta Efectivo: Total en $ en VERDE */}
+              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+                {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+              </div>
+
+              {/* Tarjeta Efectivo: Debajo en GRIS y más pequeño los montos en $ y Bs individuales */}
+              <div className="text-[10px] sm:text-[11px] font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5 flex items-center justify-end gap-1.5">
+                {hideBalances ? (
+                  <span>$ **** · Bs. ****</span>
+                ) : (
+                  <>
+                    <span>{formatUSD(cashUsd)}</span>
+                    <span className="text-slate-600">·</span>
+                    <span>{formatBs(cashBs)}</span>
+                  </>
+                )}
+              </div>
+            </>
           ) : (
             <>
               {/* Monto en Dólares (Original: siempre Verde) */}

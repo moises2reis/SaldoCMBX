@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { X, Check, Landmark, Gem, Loader2 } from 'lucide-react';
+import { X, Check, Landmark, Gem, Banknote, Loader2 } from 'lucide-react';
 
 interface EditBankBalanceModalProps {
   isOpen: boolean;
   account: BankAccount | null;
   onClose: () => void;
-  onSave: (bankName: string, monto: number, bankId: string) => Promise<void>;
+  onSave: (bankName: string, monto: number, bankId: string, montoUsd?: number) => Promise<void>;
 }
 
 // Formateador con puntos de miles y coma decimal
@@ -25,6 +25,37 @@ const parseSpanishNumber = (str: string): number => {
   return isNaN(num) ? 0 : num;
 };
 
+// Formateo dinámico al escribir
+const formatInputValue = (inputVal: string): string => {
+  if (!inputVal) return '';
+  if (/[^\d.,]/.test(inputVal)) return inputVal;
+
+  const endsWithSeparator = inputVal.endsWith(',') || inputVal.endsWith('.');
+
+  if (inputVal.includes(',')) {
+    const [intPart, ...decParts] = inputVal.split(',');
+    const cleanInt = intPart.replace(/\D/g, '');
+    const cleanDec = decParts.join('').replace(/\D/g, '').slice(0, 4);
+    const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+    if (endsWithSeparator && cleanDec === '') {
+      return `${formattedInt || '0'},`;
+    }
+    return cleanDec !== '' ? `${formattedInt || '0'},${cleanDec}` : formattedInt;
+  } else if (inputVal.includes('.')) {
+    if (endsWithSeparator) {
+      const cleanInt = inputVal.slice(0, -1).replace(/\D/g, '');
+      const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+      return `${formattedInt || '0'},`;
+    } else {
+      const cleanInt = inputVal.replace(/\D/g, '');
+      return cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+    }
+  } else {
+    const cleanInt = inputVal.replace(/\D/g, '');
+    return cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+  }
+};
+
 export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
   isOpen,
   account,
@@ -32,16 +63,25 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
   onSave,
 }) => {
   const [balanceInput, setBalanceInput] = useState<string>('');
+  const [montoBsInput, setMontoBsInput] = useState<string>('');
+  const [montoUsdInput, setMontoUsdInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     if (account) {
-      setBalanceInput(formatSpanishNumber(account.balanceNative));
+      const isEf = account.categoria?.trim().toLowerCase() === 'efectivo';
+      if (isEf) {
+        setMontoBsInput(formatSpanishNumber(account.balanceNative));
+        setMontoUsdInput(formatSpanishNumber(account.montoUsd || 0));
+      } else {
+        setBalanceInput(formatSpanishNumber(account.balanceNative));
+      }
     }
   }, [account, isOpen]);
 
   if (!isOpen || !account) return null;
 
+  const isEfectivo = account.categoria?.trim().toLowerCase() === 'efectivo';
   const isBinance =
     account.id === 'binance' ||
     account.bankName.toLowerCase().includes('binance') ||
@@ -49,53 +89,31 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
   const currencyUnit = isBinance ? 'USDT' : account.nativeCurrency === 'USD' ? 'USD' : 'Bs.';
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputVal = e.target.value;
-    if (!inputVal) {
-      setBalanceInput('');
-      return;
-    }
-
-    // Permitir solo dígitos, puntos y comas
-    if (/[^\d.,]/.test(inputVal)) return;
-
-    const endsWithSeparator = inputVal.endsWith(',') || inputVal.endsWith('.');
-
-    if (inputVal.includes(',')) {
-      const [intPart, ...decParts] = inputVal.split(',');
-      const cleanInt = intPart.replace(/\D/g, '');
-      const cleanDec = decParts.join('').replace(/\D/g, '').slice(0, 4);
-      const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
-      if (endsWithSeparator && cleanDec === '') {
-        setBalanceInput(`${formattedInt || '0'},`);
-      } else {
-        setBalanceInput(cleanDec !== '' ? `${formattedInt || '0'},${cleanDec}` : formattedInt);
-      }
-    } else if (inputVal.includes('.')) {
-      if (endsWithSeparator) {
-        const cleanInt = inputVal.slice(0, -1).replace(/\D/g, '');
-        const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
-        setBalanceInput(`${formattedInt || '0'},`);
-      } else {
-        const cleanInt = inputVal.replace(/\D/g, '');
-        setBalanceInput(cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '');
-      }
-    } else {
-      const cleanInt = inputVal.replace(/\D/g, '');
-      setBalanceInput(cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '');
-    }
+  const handleGenericChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (val: string) => void
+  ) => {
+    const val = e.target.value;
+    if (val && /[^\d.,]/.test(val)) return;
+    setter(formatInputValue(val));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const num = parseSpanishNumber(balanceInput);
-    if (num < 0) return;
-
     setIsSubmitting(true);
     try {
-      // Nombre de banco que se enviará en el webhook (ej: BDV, BANESCO, BNC, etc.)
       const bankNameToSend = account.bankShort || account.bankId || account.bankName;
-      await onSave(bankNameToSend, num, account.id);
+
+      if (isEfectivo) {
+        const numBs = parseSpanishNumber(montoBsInput);
+        const numUsd = parseSpanishNumber(montoUsdInput);
+        await onSave(bankNameToSend, numBs, account.id, numUsd);
+      } else {
+        const num = parseSpanishNumber(balanceInput);
+        if (num < 0) return;
+        await onSave(bankNameToSend, num, account.id);
+      }
+
       onClose();
     } catch (err) {
       console.error('Error saving bank balance:', err);
@@ -107,12 +125,14 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl relative overflow-hidden">
-        {/* Encabezado con Icono del Banco y Botón Cerrar */}
+        {/* Encabezado con Icono del Banco/Efectivo y Botón Cerrar */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center border bg-slate-800/80 border-slate-700/50">
               {isBinance ? (
                 <Gem className="w-5 h-5 text-slate-400" />
+              ) : isEfectivo ? (
+                <Banknote className="w-5 h-5 text-slate-400" />
               ) : (
                 <Landmark className="w-5 h-5 text-slate-400" />
               )}
@@ -122,7 +142,9 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
                 {account.bankShort}
               </h3>
               <p className="text-xs text-slate-400 font-mono">
-                {isBinance ? '1272204580' : account.accountNumber || account.bankName}
+                {isBinance
+                  ? '1272204580'
+                  : account.accountNumber || (isEfectivo ? 'Efectivo / Caja' : account.bankName)}
               </p>
             </div>
           </div>
@@ -140,26 +162,73 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
         {/* Formulario de actualización */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Saldo actual ({currencyUnit}):
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={balanceInput}
-                onChange={handleInputChange}
-                autoFocus
-                disabled={isSubmitting}
-                placeholder="0,00"
-                className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-3.5 py-3 text-xl font-mono font-bold text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
-              />
-              <span className="absolute right-3.5 top-3.5 text-xs font-mono font-semibold text-slate-400">
-                {currencyUnit}
-              </span>
+          {isEfectivo ? (
+            /* 2 Inputs separados para Efectivo: Monto en Bs y Monto en $ */
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Monto en Bolívares (Bs.):
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={montoBsInput}
+                    onChange={(e) => handleGenericChange(e, setMontoBsInput)}
+                    autoFocus
+                    disabled={isSubmitting}
+                    placeholder="0,00"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-3.5 py-2.5 text-lg font-mono font-bold text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
+                  />
+                  <span className="absolute right-3.5 top-3 text-xs font-mono font-semibold text-slate-400">
+                    Bs.
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Monto en Dólares ($):
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={montoUsdInput}
+                    onChange={(e) => handleGenericChange(e, setMontoUsdInput)}
+                    disabled={isSubmitting}
+                    placeholder="0,00"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-3.5 py-2.5 text-lg font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
+                  />
+                  <span className="absolute right-3.5 top-3 text-xs font-mono font-semibold text-emerald-400/80">
+                    $ USD
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* 1 Input para bancos regulares */
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Saldo actual ({currencyUnit}):
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={balanceInput}
+                  onChange={(e) => handleGenericChange(e, setBalanceInput)}
+                  autoFocus
+                  disabled={isSubmitting}
+                  placeholder="0,00"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-3.5 py-3 text-xl font-mono font-bold text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
+                />
+                <span className="absolute right-3.5 top-3.5 text-xs font-mono font-semibold text-slate-400">
+                  {currencyUnit}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Botones de acción */}
           <div className="flex gap-2.5 justify-end pt-3">
@@ -173,7 +242,10 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || balanceInput === ''}
+              disabled={
+                isSubmitting ||
+                (isEfectivo ? montoBsInput === '' && montoUsdInput === '' : balanceInput === '')
+              }
               className="px-4 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-emerald-950/50"
             >
               {isSubmitting ? (

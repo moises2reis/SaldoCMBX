@@ -20,8 +20,10 @@ export interface BankAccount {
   bankShort: string;
   accountType: string;
   accountNumber: string;
+  categoria?: string;
   nativeCurrency: CurrencyType;
   balanceNative: number;
+  montoUsd?: number;
   lastSync: string;
   linkActualizar?: string;
 }

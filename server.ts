@@ -46,9 +46,14 @@ function parseAmount(val: unknown): number {
 
 interface RawBankRecord {
   id_banco: string;
-  monto_bs: string | number;
-  fecha_actualizacion: string;
-  cuenta: string;
+  monto_bs?: string | number;
+  'monto_$'?: string | number;
+  monto_usd?: string | number;
+  monto_dolar?: string | number;
+  categoria?: string;
+  category?: string;
+  fecha_actualizacion?: string;
+  cuenta?: string;
   link_actualizar?: string;
 }
 
@@ -59,8 +64,10 @@ interface BankAccount {
   bankShort: string;
   accountType: string;
   accountNumber: string;
+  categoria?: string;
   nativeCurrency: 'VES' | 'USD';
   balanceNative: number;
+  montoUsd?: number;
   lastSync: string;
   linkActualizar?: string;
 }
@@ -244,6 +251,8 @@ async function startServer() {
           }
           seenIds.add(cleanId);
           const isBinance = rawName.toLowerCase().includes('binance');
+          const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Banco');
+          const rawUsd = item['monto_$'] ?? item.monto_$ ?? item.monto_usd ?? item.monto_dolar;
 
           return {
             id: cleanId,
@@ -252,8 +261,10 @@ async function startServer() {
             bankShort: rawName,
             accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
             accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
+            categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Banco'),
             nativeCurrency: isBinance ? 'USD' : 'VES',
             balanceNative: parseAmount(item.monto_bs),
+            montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,
             lastSync: item.fecha_actualizacion ? String(item.fecha_actualizacion) : '',
             linkActualizar: item.link_actualizar ? String(item.link_actualizar) : '',
           };
@@ -277,8 +288,10 @@ async function startServer() {
         bankShort: 'BINANCE',
         accountType: 'ID',
         accountNumber: '1272204580',
+        categoria: 'Binance',
         nativeCurrency: 'USD',
         balanceNative: binanceData.totalUsd,
+        montoUsd: binanceData.totalUsd,
         lastSync: binanceData.lastSync || '',
         linkActualizar: '',
       });
@@ -286,6 +299,9 @@ async function startServer() {
       // Si el saldo de Binance proviene de la API de Binance o es mayor a 0, actualizarlo
       cachedAccounts[binanceIndex].accountNumber = '1272204580';
       cachedAccounts[binanceIndex].accountType = 'ID';
+      if (!cachedAccounts[binanceIndex].categoria || cachedAccounts[binanceIndex].categoria === 'Digital') {
+        cachedAccounts[binanceIndex].categoria = 'Binance';
+      }
       if (binanceData.totalUsd > 0 || binanceData.lastSync) {
         cachedAccounts[binanceIndex].balanceNative = binanceData.totalUsd;
         cachedAccounts[binanceIndex].nativeCurrency = 'USD';
@@ -305,10 +321,14 @@ async function startServer() {
 
   // Rutas API
   app.get('/api/rates', async (_req, res) => {
-    const [rates] = await Promise.all([
+    const [rates, p2pPrice] = await Promise.all([
       fetchRatesFromAppScript(),
       obtenerTasaBinanceP2P().catch(() => cachedRates.binanceP2p),
     ]);
+    if (p2pPrice > 0) {
+      rates.binanceP2p = p2pPrice;
+      cachedRates.binanceP2p = p2pPrice;
+    }
     res.json({ success: true, rates });
   });
 
@@ -400,11 +420,16 @@ async function startServer() {
   // Consulta en tiempo real a Google Apps Script de saldos, Binance y tasas al entrar/refrescar
   app.get('/api/banks/balances', async (_req, res) => {
     await getTotalUSDT().catch(() => {});
-    const [accounts, rates] = await Promise.all([
+    const [accounts, rates, p2pPrice] = await Promise.all([
       fetchAccountsFromAppScript(),
       fetchRatesFromAppScript(),
       obtenerTasaBinanceP2P().catch(() => cachedRates.binanceP2p),
     ]);
+
+    if (p2pPrice > 0) {
+      rates.binanceP2p = p2pPrice;
+      cachedRates.binanceP2p = p2pPrice;
+    }
 
     res.json({
       success: true,
@@ -467,8 +492,14 @@ async function startServer() {
   // Endpoint para actualizar saldo manualmente y disparar el webhook de Google Apps Script:
   // APPSCRIPT_URL?banco=[nombre banco]&monto=[saldo]
   app.post('/api/banks/update-balance', async (req, res) => {
-    const { banco, monto, id } = req.body;
-    const numMonto = parseFloat(String(monto));
+    const { banco, monto, montoUsd, monto_usd, id } = req.body;
+    const numMontoBs = parseFloat(String(monto));
+    const numMontoUsd =
+      montoUsd !== undefined
+        ? parseFloat(String(montoUsd))
+        : monto_usd !== undefined
+        ? parseFloat(String(monto_usd))
+        : undefined;
 
     if (!banco && !id) {
       return res.status(400).json({ success: false, error: 'Banco o ID requerido' });
@@ -477,9 +508,15 @@ async function startServer() {
     const bankIdentifier = banco || id;
 
     // 1. Enviar Webhook a Google Apps Script
-    const scriptUrl = `${APPSCRIPT_URL}${APPSCRIPT_URL.includes('?') ? '&' : '?'}banco=${encodeURIComponent(
+    let scriptUrl = `${APPSCRIPT_URL}${APPSCRIPT_URL.includes('?') ? '&' : '?'}banco=${encodeURIComponent(
       bankIdentifier
-    )}&monto=${encodeURIComponent(numMonto)}`;
+    )}&monto=${encodeURIComponent(numMontoBs)}&monto_bs=${encodeURIComponent(numMontoBs)}`;
+
+    if (numMontoUsd !== undefined && !isNaN(numMontoUsd)) {
+      scriptUrl += `&monto_usd=${encodeURIComponent(numMontoUsd)}&monto_$=${encodeURIComponent(
+        numMontoUsd
+      )}&monto_dolar=${encodeURIComponent(numMontoUsd)}`;
+    }
 
     try {
       await fetch(scriptUrl, {
@@ -499,15 +536,20 @@ async function startServer() {
         (id && a.id.toLowerCase() === String(id).toLowerCase())
     );
 
-    if (bIndex !== -1 && !isNaN(numMonto)) {
-      cachedAccounts[bIndex].balanceNative = numMonto;
+    if (bIndex !== -1) {
+      if (!isNaN(numMontoBs)) {
+        cachedAccounts[bIndex].balanceNative = numMontoBs;
+      }
+      if (numMontoUsd !== undefined && !isNaN(numMontoUsd)) {
+        cachedAccounts[bIndex].montoUsd = numMontoUsd;
+      }
       cachedAccounts[bIndex].lastSync = new Date().toISOString();
 
       if (
         cachedAccounts[bIndex].id === 'binance' ||
         cachedAccounts[bIndex].bankShort.toLowerCase().includes('binance')
       ) {
-        updateCachedBinanceData(numMonto);
+        updateCachedBinanceData(numMontoBs);
       }
     }
 

@@ -8,6 +8,7 @@ import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function App() {
   const [rates, setRates] = useState<ExchangeRates>(() => {
@@ -41,6 +42,7 @@ export default function App() {
   const [binanceSyncing, setBinanceSyncing] = useState<boolean>(false);
   const [protectionSeconds, setProtectionSeconds] = useState<number>(0);
   const [justUpdatedBankId, setJustUpdatedBankId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('todos');
 
   // Modal para editar saldo bancario individual y disparar webhook
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
@@ -56,20 +58,43 @@ export default function App() {
     }
   }, [accounts]);
 
-  // Estado para ocultar/mostrar montos (privacidad)
-  const [hideBalances, setHideBalances] = useState<boolean>(() => {
+  // Estado para ocultar/mostrar monto total del encabezado
+  const [hideHeaderTotal, setHideHeaderTotal] = useState<boolean>(() => {
     try {
+      const saved = localStorage.getItem('hide_header_total');
+      if (saved !== null) return saved === 'true';
       return localStorage.getItem('hide_balances') === 'true';
     } catch {
       return false;
     }
   });
 
-  const handleToggleHideBalances = () => {
-    setHideBalances((prev) => {
+  const handleToggleHideHeaderTotal = () => {
+    setHideHeaderTotal((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem('hide_balances', String(next));
+        localStorage.setItem('hide_header_total', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Estado para ocultar/mostrar los saldos individuales de las tarjetas
+  const [hideCardBalances, setHideCardBalances] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('hide_card_balances');
+      if (saved !== null) return saved === 'true';
+      return localStorage.getItem('hide_balances') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleHideCardBalances = () => {
+    setHideCardBalances((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('hide_card_balances', String(next));
       } catch {}
       return next;
     });
@@ -187,7 +212,7 @@ export default function App() {
   // Tasa activa según la moneda seleccionada (USD, EUR o P2P)
   const bcvUsdRate = rates.bcvUsd || rates.bcv || 853.50;
   const bcvEurRate = rates.bcvEur || 976.55;
-  const binanceP2pRate = rates.binanceP2p || bcvUsdRate;
+  const binanceP2pRate = rates.binanceP2p && rates.binanceP2p > 0 ? rates.binanceP2p : 964.80;
 
   const activeRate =
     foreignCurrency === 'USD'
@@ -196,19 +221,70 @@ export default function App() {
       ? bcvEurRate
       : binanceP2pRate;
 
-  // Calcular totales consolidados dinámicos
-  let totalBs = 0;
-  accounts.forEach((acc) => {
-    if (acc.nativeCurrency === 'VES') {
-      totalBs += acc.balanceNative;
-    } else if (acc.nativeCurrency === 'USD') {
-      totalBs += convertValue(acc.balanceNative, 'USD', 'VES', activeRate);
-    } else if (acc.nativeCurrency === 'EUR') {
-      totalBs += convertValue(acc.balanceNative, 'EUR', 'VES', activeRate);
-    }
-  });
+  // Extraer categorías dinámicas con conteo de bancos
+  const categories = React.useMemo(() => {
+    const catMap = new Map<string, number>();
+    accounts.forEach((acc) => {
+      const cat = (acc.categoria || 'Banco').trim();
+      const normalized = cat.toLowerCase();
+      catMap.set(normalized, (catMap.get(normalized) || 0) + 1);
+    });
 
-  const totalForeign = activeRate > 0 ? totalBs / activeRate : 0;
+    const list: { id: string; label: string; count: number }[] = [
+      { id: 'todos', label: 'Todos', count: accounts.length },
+    ];
+
+    catMap.forEach((count, catKey) => {
+      const label =
+        catKey === 'banco'
+          ? 'Bancos'
+          : catKey === 'efectivo'
+          ? 'Efectivo'
+          : catKey === 'binance'
+          ? 'Binance'
+          : catKey === 'digital'
+          ? 'Digital / Cripto'
+          : catKey.charAt(0).toUpperCase() + catKey.slice(1);
+      list.push({ id: catKey, label, count });
+    });
+
+    return list;
+  }, [accounts]);
+
+  // Cuentas filtradas por categoría seleccionada
+  const filteredAccounts = React.useMemo(() => {
+    if (selectedCategory === 'todos') return accounts;
+    return accounts.filter(
+      (a) => (a.categoria || 'banco').trim().toLowerCase() === selectedCategory.toLowerCase()
+    );
+  }, [accounts, selectedCategory]);
+
+  const currentCategoryLabel = React.useMemo(() => {
+    const found = categories.find((c) => c.id === selectedCategory);
+    return found ? found.label : 'Todos';
+  }, [categories, selectedCategory]);
+
+  // Calcular totales consolidados dinámicos según la categoría seleccionada (incluyendo efectivo en Bs y $)
+  const { totalBs, totalForeign } = React.useMemo(() => {
+    let bs = 0;
+    filteredAccounts.forEach((acc) => {
+      const isEfectivo = acc.categoria?.trim().toLowerCase() === 'efectivo';
+      if (isEfectivo) {
+        const bsPart = acc.balanceNative || 0;
+        const usdPart = (acc.montoUsd || 0) * activeRate;
+        bs += bsPart + usdPart;
+      } else if (acc.nativeCurrency === 'VES') {
+        bs += acc.balanceNative;
+      } else if (acc.nativeCurrency === 'USD') {
+        bs += convertValue(acc.balanceNative, 'USD', 'VES', activeRate);
+      } else if (acc.nativeCurrency === 'EUR') {
+        bs += convertValue(acc.balanceNative, 'EUR', 'VES', activeRate);
+      }
+    });
+
+    const foreign = activeRate > 0 ? bs / activeRate : 0;
+    return { totalBs: bs, totalForeign: foreign };
+  }, [filteredAccounts, activeRate]);
 
   const handleRefresh = async () => {
     setIsSyncing(true);
@@ -289,13 +365,23 @@ export default function App() {
   };
 
   // Guardar saldo manual y disparar webhook a Google Apps Script
-  const handleSaveBankBalance = async (bankName: string, monto: number, bankId: string) => {
+  const handleSaveBankBalance = async (
+    bankName: string,
+    monto: number,
+    bankId: string,
+    montoUsd?: number
+  ) => {
     try {
       // Actualizar optimistamente el estado visual
       setAccounts((prev) =>
         prev.map((a) =>
           a.id === bankId
-            ? { ...a, balanceNative: monto, lastSync: new Date().toISOString() }
+            ? {
+                ...a,
+                balanceNative: monto,
+                montoUsd: montoUsd !== undefined ? montoUsd : a.montoUsd,
+                lastSync: new Date().toISOString(),
+              }
             : a
         )
       );
@@ -304,6 +390,7 @@ export default function App() {
       const res = await updateBankBalance({
         banco: bankName,
         monto,
+        montoUsd,
         id: bankId,
       });
 
@@ -316,32 +403,83 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 py-6 sm:py-10">
-      <div className="max-w-2xl mx-auto space-y-6">
-        {/* Encabezado: Total en Dólares ($) en verde arriba, Total en Bs en gris abajo */}
-        <SummaryHeader
-          totalBs={totalBs}
-          totalForeign={totalForeign}
-          foreignCurrency={foreignCurrency}
-          onSelectForeignCurrency={setForeignCurrency}
-          bcvUsd={bcvUsdRate}
-          bcvEur={bcvEurRate}
-          binanceP2p={binanceP2pRate}
-          fechaValor={rates.fechaValor}
-          isSyncing={isSyncing}
-          hideBalances={hideBalances}
-          onToggleHideBalances={handleToggleHideBalances}
-        />
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 pb-8">
+      <div className="max-w-2xl mx-auto">
+        {/* Encabezado fijo / estático: Nombre, Tasas, Totales y Categorías */}
+        <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md pt-4 sm:pt-6 pb-3.5 space-y-4 border-b border-slate-800/80 -mx-4 px-4 shadow-lg shadow-slate-950/40">
+          {/* Encabezado: Total en Dólares ($) en verde arriba, Total en Bs en gris abajo */}
+          <SummaryHeader
+            totalBs={totalBs}
+            totalForeign={totalForeign}
+            foreignCurrency={foreignCurrency}
+            onSelectForeignCurrency={setForeignCurrency}
+            bcvUsd={bcvUsdRate}
+            bcvEur={bcvEurRate}
+            binanceP2p={binanceP2pRate}
+            fechaValor={rates.fechaValor}
+            isSyncing={isSyncing}
+            hideBalances={hideHeaderTotal}
+            onToggleHideBalances={handleToggleHideHeaderTotal}
+            categoryLabel={currentCategoryLabel}
+          />
 
-        {/* Botón / Banner de instalación PWA para iOS y Android */}
-        <PWAInstallButton />
+          {/* Botón / Banner de instalación PWA para iOS y Android */}
+          <PWAInstallButton />
+
+          {/* Suiche de Categorías */}
+          {categories.length > 1 && (
+            <div className="flex items-center gap-1.5 p-1 bg-slate-900/90 border border-slate-800/80 rounded-2xl overflow-x-auto no-scrollbar shadow-inner">
+              {categories.map((cat) => {
+                const isActive = selectedCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`flex-1 min-w-[76px] py-1.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap select-none ${
+                      isActive
+                        ? 'bg-slate-800 text-emerald-400 border border-slate-700/70 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                    }`}
+                  >
+                    <span>{cat.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-medium ${
+                        isActive
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-slate-800/90 text-slate-500'
+                      }`}
+                    >
+                      {cat.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Lista compacta y limpia de bancos */}
-        <div className="space-y-2.5 pb-4">
+        <div className="space-y-2.5 pt-5 pb-6">
           <div className="px-1 flex items-center justify-between">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Saldos Bancarios
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Saldos Bancarios
+              </h2>
+              <button
+                type="button"
+                onClick={handleToggleHideCardBalances}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-900 rounded-md transition-colors border border-transparent hover:border-slate-800 flex items-center justify-center"
+                title={hideCardBalances ? 'Mostrar saldos de tarjetas' : 'Ocultar saldos de tarjetas'}
+                aria-label={hideCardBalances ? 'Mostrar saldos de tarjetas' : 'Ocultar saldos de tarjetas'}
+              >
+                {hideCardBalances ? (
+                  <Eye className="w-3.5 h-3.5" />
+                ) : (
+                  <EyeOff className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
             {isSyncing && (
               <span className="text-[10px] text-emerald-400 font-mono animate-pulse">
                 Sincronizando...
@@ -350,38 +488,44 @@ export default function App() {
           </div>
 
           <div className="space-y-2">
-            {accounts.map((acc) => {
-              const isBinanceAcc =
-                acc.id === 'binance' ||
-                acc.bankName.toLowerCase().includes('binance') ||
-                acc.bankShort.toLowerCase().includes('binance');
+            {filteredAccounts.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-500 font-mono">
+                No hay cuentas en esta categoría
+              </div>
+            ) : (
+              filteredAccounts.map((acc) => {
+                const isBinanceAcc =
+                  acc.id === 'binance' ||
+                  acc.bankName.toLowerCase().includes('binance') ||
+                  acc.bankShort.toLowerCase().includes('binance');
 
-              return (
-                <BankListItem
-                  key={acc.id}
-                  account={acc}
-                  activeRate={activeRate}
-                  bcvUsdRate={bcvUsdRate}
-                  bcvEurRate={bcvEurRate}
-                  hideBalances={hideBalances}
-                  isSyncing={
-                    isBinanceAcc
-                      ? binanceSyncing
-                      : syncingBankId === acc.id && protectionSeconds > 0
-                  }
-                  isBlocked={
-                    !isBinanceAcc &&
-                    syncingBankId !== null &&
-                    syncingBankId !== acc.id &&
-                    protectionSeconds > 0
-                  }
-                  protectionSeconds={isBinanceAcc ? 0 : protectionSeconds}
-                  justUpdated={justUpdatedBankId === acc.id}
-                  onSync={handleSyncSingleBank}
-                  onEditBalance={setEditingAccount}
-                />
-              );
-            })}
+                return (
+                  <BankListItem
+                    key={acc.id}
+                    account={acc}
+                    activeRate={activeRate}
+                    bcvUsdRate={bcvUsdRate}
+                    bcvEurRate={bcvEurRate}
+                    hideBalances={hideCardBalances}
+                    isSyncing={
+                      isBinanceAcc
+                        ? binanceSyncing
+                        : syncingBankId === acc.id && protectionSeconds > 0
+                    }
+                    isBlocked={
+                      !isBinanceAcc &&
+                      syncingBankId !== null &&
+                      syncingBankId !== acc.id &&
+                      protectionSeconds > 0
+                    }
+                    protectionSeconds={isBinanceAcc ? 0 : protectionSeconds}
+                    justUpdated={justUpdatedBankId === acc.id}
+                    onSync={handleSyncSingleBank}
+                    onEditBalance={setEditingAccount}
+                  />
+                );
+              })
+            )}
           </div>
         </div>
       </div>
