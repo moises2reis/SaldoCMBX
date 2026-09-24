@@ -8,21 +8,52 @@ import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { SupabaseConfigModal } from './components/SupabaseConfigModal';
-import { Database } from 'lucide-react';
 
 export default function App() {
-  const [rates, setRates] = useState<ExchangeRates>(INITIAL_RATES);
+  const [rates, setRates] = useState<ExchangeRates>(() => {
+    try {
+      const saved = localStorage.getItem('cached_exchange_rates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.bcv || parsed.bcvUsd)) {
+          return { ...INITIAL_RATES, ...parsed };
+        }
+      }
+    } catch {}
+    return INITIAL_RATES;
+  });
   const [foreignCurrency, setForeignCurrency] = useState<ForeignCurrency>('USD');
-  const [accounts, setAccounts] = useState<BankAccount[]>(INITIAL_ACCOUNTS);
+  const [accounts, setAccounts] = useState<BankAccount[]>(() => {
+    try {
+      const saved = localStorage.getItem('cached_bank_accounts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return INITIAL_ACCOUNTS;
+  });
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncingBankId, setSyncingBankId] = useState<string | null>(null);
+  const [binanceSyncing, setBinanceSyncing] = useState<boolean>(false);
   const [protectionSeconds, setProtectionSeconds] = useState<number>(0);
   const [justUpdatedBankId, setJustUpdatedBankId] = useState<string | null>(null);
 
   // Modal para editar saldo bancario individual y disparar webhook
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+
+  // Persistir cuentas en caché local cada vez que cambien
+  useEffect(() => {
+    try {
+      if (accounts && accounts.length > 0) {
+        localStorage.setItem('cached_bank_accounts', JSON.stringify(accounts));
+      }
+    } catch (err) {
+      console.warn('Error saving cached bank accounts:', err);
+    }
+  }, [accounts]);
 
   // Estado para ocultar/mostrar montos (privacidad)
   const [hideBalances, setHideBalances] = useState<boolean>(() => {
@@ -51,6 +82,9 @@ export default function App() {
 
       if (data?.rates) {
         setRates(data.rates);
+        try {
+          localStorage.setItem('cached_exchange_rates', JSON.stringify(data.rates));
+        } catch {}
       }
 
       if (data?.accounts && data.accounts.length > 0) {
@@ -63,9 +97,10 @@ export default function App() {
     }
   }, []);
 
-  // Cargar datos al entrar a la página o al refrescar
+  // Cargar datos al entrar a la página (en segundo plano si ya hay caché)
   useEffect(() => {
-    loadData();
+    const hasCached = !!localStorage.getItem('cached_bank_accounts');
+    loadData(hasCached);
   }, [loadData]);
 
   // Manejador del temporizador de 30 segundos de protección global
@@ -94,7 +129,7 @@ export default function App() {
   // Tasa activa según la moneda seleccionada (USD, EUR o P2P)
   const bcvUsdRate = rates.bcvUsd || rates.bcv || 853.50;
   const bcvEurRate = rates.bcvEur || 976.55;
-  const binanceP2pRate = rates.binanceP2p || 915.00;
+  const binanceP2pRate = rates.binanceP2p || bcvUsdRate;
 
   const activeRate =
     foreignCurrency === 'USD'
@@ -139,6 +174,37 @@ export default function App() {
   };
 
   const handleSyncSingleBank = async (bankId: string) => {
+    const isBinance =
+      bankId === 'binance' || bankId.toLowerCase().includes('binance');
+
+    // 1. Si es Binance, sincronizar inmediatamente vía API / Edge Function sin temporizador de 30s
+    if (isBinance) {
+      if (binanceSyncing) return;
+      setBinanceSyncing(true);
+      try {
+        const res = await syncSingleBank(bankId);
+        if (res.accounts && res.accounts.length > 0) {
+          setAccounts(res.accounts);
+        } else if (res.account) {
+          setAccounts((prev) =>
+            prev.map((a) =>
+              a.id === bankId || a.bankName.toLowerCase().includes('binance')
+                ? { ...a, ...res.account! }
+                : a
+            )
+          );
+        }
+        setJustUpdatedBankId(bankId);
+        setTimeout(() => setJustUpdatedBankId(null), 2500);
+      } catch (err) {
+        console.warn(`Error syncing Binance immediately:`, err);
+      } finally {
+        setBinanceSyncing(false);
+      }
+      return;
+    }
+
+    // 2. Si son bancos tradicionales venezolanos con MacroDroid SMS (30s)
     if (protectionSeconds > 0) return;
 
     setSyncingBankId(bankId);
@@ -207,14 +273,13 @@ export default function App() {
           isSyncing={isSyncing}
           hideBalances={hideBalances}
           onToggleHideBalances={handleToggleHideBalances}
-          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         />
 
         {/* Botón / Banner de instalación PWA para iOS y Android */}
         <PWAInstallButton />
 
         {/* Lista compacta y limpia de bancos */}
-        <div className="space-y-2.5">
+        <div className="space-y-2.5 pb-4">
           <div className="px-1 flex items-center justify-between">
             <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Saldos Bancarios
@@ -227,35 +292,39 @@ export default function App() {
           </div>
 
           <div className="space-y-2">
-            {accounts.map((acc) => (
-              <BankListItem
-                key={acc.id}
-                account={acc}
-                activeRate={activeRate}
-                bcvUsdRate={bcvUsdRate}
-                bcvEurRate={bcvEurRate}
-                hideBalances={hideBalances}
-                isSyncing={syncingBankId === acc.id && protectionSeconds > 0}
-                isBlocked={syncingBankId !== null && syncingBankId !== acc.id && protectionSeconds > 0}
-                protectionSeconds={protectionSeconds}
-                justUpdated={justUpdatedBankId === acc.id}
-                onSync={handleSyncSingleBank}
-                onEditBalance={setEditingAccount}
-              />
-            ))}
-          </div>
-        </div>
+            {accounts.map((acc) => {
+              const isBinanceAcc =
+                acc.id === 'binance' ||
+                acc.bankName.toLowerCase().includes('binance') ||
+                acc.bankShort.toLowerCase().includes('binance');
 
-        {/* Pie de página con acceso a configuración de Supabase */}
-        <div className="pt-2 pb-6 flex items-center justify-center">
-          <button
-            type="button"
-            onClick={() => setIsSupabaseModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] text-slate-500 hover:text-slate-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>Configuración Supabase / Binance</span>
-          </button>
+              return (
+                <BankListItem
+                  key={acc.id}
+                  account={acc}
+                  activeRate={activeRate}
+                  bcvUsdRate={bcvUsdRate}
+                  bcvEurRate={bcvEurRate}
+                  hideBalances={hideBalances}
+                  isSyncing={
+                    isBinanceAcc
+                      ? binanceSyncing
+                      : syncingBankId === acc.id && protectionSeconds > 0
+                  }
+                  isBlocked={
+                    !isBinanceAcc &&
+                    syncingBankId !== null &&
+                    syncingBankId !== acc.id &&
+                    protectionSeconds > 0
+                  }
+                  protectionSeconds={isBinanceAcc ? 0 : protectionSeconds}
+                  justUpdated={justUpdatedBankId === acc.id}
+                  onSync={handleSyncSingleBank}
+                  onEditBalance={setEditingAccount}
+                />
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -265,13 +334,6 @@ export default function App() {
         account={editingAccount}
         onClose={() => setEditingAccount(null)}
         onSave={handleSaveBankBalance}
-      />
-
-      {/* Modal para configurar URL y Anon Key de Supabase en GitHub Pages */}
-      <SupabaseConfigModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-        onSaved={loadData}
       />
 
       {/* Indicador de estado Offline */}

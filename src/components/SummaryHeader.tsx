@@ -1,7 +1,7 @@
 import React from 'react';
 import { ForeignCurrency } from '../types/dashboard';
 import { formatBs, formatUSD, formatRate } from '../utils/formatters';
-import { Eye, EyeOff, Terminal } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface SummaryHeaderProps {
   totalBs: number;
@@ -15,7 +15,6 @@ interface SummaryHeaderProps {
   isSyncing?: boolean;
   hideBalances?: boolean;
   onToggleHideBalances?: () => void;
-  onOpenSupabaseModal?: () => void;
 }
 
 export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
@@ -29,7 +28,6 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
   fechaValor,
   hideBalances = false,
   onToggleHideBalances,
-  onOpenSupabaseModal,
 }) => {
   return (
     <header className="space-y-4 pb-5 border-b border-slate-800/80">
@@ -125,32 +123,19 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
           <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-400 tabular-nums tracking-tight">
             {hideBalances ? '$ ****' : formatUSD(totalForeign)}
           </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onToggleHideBalances}
-              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 rounded-lg transition-colors border border-transparent hover:border-slate-800"
-              title={hideBalances ? 'Mostrar fondos' : 'Ocultar fondos'}
-              aria-label={hideBalances ? 'Mostrar fondos' : 'Ocultar fondos'}
-            >
-              {hideBalances ? (
-                <Eye className="w-5 h-5" />
-              ) : (
-                <EyeOff className="w-5 h-5" />
-              )}
-            </button>
-            {onOpenSupabaseModal && (
-              <button
-                type="button"
-                onClick={onOpenSupabaseModal}
-                className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-900/80 rounded-lg transition-colors border border-transparent hover:border-slate-800"
-                title="Consola de Diagnóstico & Logs Supabase/Binance"
-                aria-label="Consola de Diagnóstico & Logs Supabase/Binance"
-              >
-                <Terminal className="w-4 h-4" />
-              </button>
+          <button
+            type="button"
+            onClick={onToggleHideBalances}
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 rounded-lg transition-colors border border-transparent hover:border-slate-800"
+            title={hideBalances ? 'Mostrar fondos' : 'Ocultar fondos'}
+            aria-label={hideBalances ? 'Mostrar fondos' : 'Ocultar fondos'}
+          >
+            {hideBalances ? (
+              <Eye className="w-5 h-5" />
+            ) : (
+              <EyeOff className="w-5 h-5" />
             )}
-          </div>
+          </button>
         </div>
         <div className="text-base sm:text-lg font-medium font-mono text-slate-400 tabular-nums tracking-tight mt-0.5">
           {hideBalances ? 'Bs. ****' : formatBs(totalBs)}

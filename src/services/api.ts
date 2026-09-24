@@ -1,7 +1,6 @@
 import { BankAccount, ExchangeRates } from '../types/dashboard';
 import { INITIAL_ACCOUNTS, INITIAL_RATES } from '../constants/initialData';
 import { callSupabase } from './supabase';
-import { debugLogger } from './debugLogger';
 
 export { callSupabase };
 
@@ -95,7 +94,6 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
 
 async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
   // 1. Consultar vía Supabase Edge Function ('swift-handler') con action='balance'
-  debugLogger.addLog('info', 'Binance', 'Consultando saldo de Binance vía Supabase Edge Function (action: "balance")...');
   try {
     const res = await callSupabase<any>('balance', {});
     if (res.success && res.data) {
@@ -111,29 +109,16 @@ async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync:
       );
       if (liveBal > 0) {
         setLocalBinanceBalance(liveBal);
-        debugLogger.addLog('success', 'Binance', `Saldo Binance obtenido con éxito: $${liveBal.toFixed(2)} USD`, dataObj);
         return { totalUsd: liveBal, lastSync: new Date().toISOString() };
       } else if (res.data.code === 1000 && liveBal === 0) {
-        // Saldo es 0.00
         setLocalBinanceBalance(0);
-        debugLogger.addLog('info', 'Binance', 'Saldo Binance obtenido: $0.00 USD', dataObj);
         return { totalUsd: 0, lastSync: new Date().toISOString() };
-      } else {
-        debugLogger.addLog('warn', 'Binance', `Respuesta recibida: ${res.data.message || JSON.stringify(res.data)}`, res.data);
       }
-    } else {
-      debugLogger.addLog('warn', 'Binance', `No se pudo obtener saldo en vivo: ${res.error || 'Respuesta fallida'}`);
     }
-  } catch (err: any) {
-    debugLogger.addLog('error', 'Binance', `Error general en getOrFetchBinanceBalance: ${err?.message}`);
-  }
+  } catch {}
 
   // 2. Retornar del almacenamiento local en navegador
-  const local = getLocalBinanceBalance();
-  if (local.totalUsd > 0) {
-    debugLogger.addLog('info', 'Binance', `Usando saldo de respaldo local: $${local.totalUsd.toFixed(2)} USD`);
-  }
-  return local;
+  return getLocalBinanceBalance();
 }
 
 /**

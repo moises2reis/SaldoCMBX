@@ -85,7 +85,7 @@ async function startServer() {
     bcv: 853.50,
     bcvUsd: 853.50,
     bcvEur: 976.55,
-    binanceP2p: 915.00,
+    binanceP2p: 0,
     fechaValor: '',
     tasaUsdAnterior: 852.42,
     tasaEurAnterior: 978.17,

@@ -2,10 +2,12 @@ import { CurrencyType, ForeignCurrency } from '../types/dashboard';
 
 /**
  * Formatea un número usando '.' para miles y ',' para decimales (formato es-VE/es-ES)
- * Ejemplos: 1.234.567,89 / 853,50
+ * Si el monto es 0, retorna '-'
+ * Ejemplos: 1.234.567,89 / 853,50 / -
  */
 export function formatAmountNumber(amount: number, decimals: number = 2): string {
   const val = isNaN(amount) || amount === null || amount === undefined ? 0 : amount;
+  if (Math.abs(val) < 0.00001) return '-';
   return new Intl.NumberFormat('es-VE', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -13,16 +15,24 @@ export function formatAmountNumber(amount: number, decimals: number = 2): string
 }
 
 export function formatRate(rate: number): string {
-  return formatAmountNumber(rate, 2);
+  if (isNaN(rate) || rate === null || rate === undefined || rate <= 0) return '-';
+  return new Intl.NumberFormat('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(rate);
 }
 
 export function formatBs(amount: number): string {
-  return `Bs. ${formatAmountNumber(amount, 2)}`;
+  const val = isNaN(amount) || amount === null || amount === undefined ? 0 : amount;
+  if (Math.abs(val) < 0.00001) return '-';
+  return `Bs. ${formatAmountNumber(val, 2)}`;
 }
 
 export function formatForeign(amount: number, currency: ForeignCurrency = 'USD'): string {
   const symbol = currency === 'EUR' ? '€' : '$';
-  return `${symbol} ${formatAmountNumber(amount, 2)}`;
+  const val = isNaN(amount) || amount === null || amount === undefined ? 0 : amount;
+  if (Math.abs(val) < 0.00001) return '-';
+  return `${symbol} ${formatAmountNumber(val, 2)}`;
 }
 
 export function formatUSD(amount: number): string {

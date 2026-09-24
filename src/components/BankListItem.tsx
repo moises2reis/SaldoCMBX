@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { formatBs, formatUSD, convertValue, formatSmartUpdateTime, isOlderThanOneHour } from '../utils/formatters';
-import { Landmark, RefreshCw, Check, Clock, Gem, ShieldAlert } from 'lucide-react';
+import { formatBs, formatUSD, convertValue, formatSmartUpdateTime } from '../utils/formatters';
+import { Landmark, RefreshCw, Check, Clock, Gem } from 'lucide-react';
 
 interface BankListItemProps {
   account: BankAccount;
@@ -62,7 +62,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   // Subtítulo: para Binance mostrar específicamente 1272204580
   const displaySubtitle = isBinance ? '1272204580' : account.accountNumber;
   const timeAgoText = formatSmartUpdateTime(account.lastSync);
-  const isOutdated = isOlderThanOneHour(account.lastSync);
+  const isZero = !hideBalances && Math.abs(amountUsd) < 0.001 && Math.abs(amountBs) < 0.001;
 
   const handleRefreshClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -73,6 +73,12 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   };
 
   const handleCardClick = () => {
+    if (isBinance) {
+      if (onSync && !isSyncing && !isBlocked) {
+        onSync(account.id);
+      }
+      return;
+    }
     if (onEditBalance) {
       onEditBalance(account);
     }
@@ -83,8 +89,10 @@ export const BankListItem: React.FC<BankListItemProps> = ({
       onClick={handleCardClick}
       role="button"
       tabIndex={0}
-      title="Toca para editar saldo y enviar webhook"
-      className="bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all flex items-center justify-between gap-3 shadow-sm cursor-pointer select-none group"
+      title={isBinance ? "Toca para sincronizar Binance" : "Toca para editar saldo y enviar webhook"}
+      className={`bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all flex items-center justify-between gap-3 shadow-sm select-none group ${
+        isBinance ? 'cursor-default' : 'cursor-pointer'
+      }`}
     >
       {/* Izquierda: Icono y nombre */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -114,25 +122,26 @@ export const BankListItem: React.FC<BankListItemProps> = ({
       <div className="flex items-center gap-3 shrink-0">
         {/* Montos y tiempo transcurrido */}
         <div className="text-right flex flex-col items-end">
-          {/* Monto en Dólares (Rojo si supera 1h, Verde si está actualizado) */}
-          <div
-            className={`text-sm sm:text-base font-bold font-mono tabular-nums leading-tight ${
-              isOutdated ? 'text-red-400' : 'text-emerald-400'
-            }`}
-          >
-            {hideBalances ? '$ ****' : formatUSD(amountUsd)}
-          </div>
+          {isZero ? (
+            /* Monto en 0: un solo '-' en gris */
+            <div className="text-sm sm:text-base font-bold font-mono text-slate-500 tabular-nums leading-tight">
+              -
+            </div>
+          ) : (
+            <>
+              {/* Monto en Dólares (Original: siempre Verde) */}
+              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+                {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+              </div>
 
-          {/* Monto en Bolívares (Rojo si supera 1h, Gris si está actualizado) */}
-          <div
-            className={`text-[11px] sm:text-xs font-medium font-mono tabular-nums leading-tight mt-0.5 ${
-              isOutdated ? 'text-red-400/80' : 'text-slate-400'
-            }`}
-          >
-            {hideBalances ? 'Bs. ****' : formatBs(amountBs)}
-          </div>
+              {/* Monto en Bolívares (Original: siempre Gris) */}
+              <div className="text-[11px] sm:text-xs font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5">
+                {hideBalances ? 'Bs. ****' : formatBs(amountBs)}
+              </div>
+            </>
+          )}
 
-          {/* Tiempo transcurrido debajo del monto en Bolívares (solo si existe fecha) */}
+          {/* Tiempo transcurrido debajo del monto (solo si existe fecha) */}
           {timeAgoText ? (
             <div className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono text-slate-500 tabular-nums mt-0.5">
               <Clock className="w-2.5 h-2.5 text-slate-500" />
@@ -141,7 +150,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
           ) : null}
         </div>
 
-        {/* Botón individual de actualizar con protección de 30s */}
+        {/* Botón individual de actualizar con protección */}
         <button
           type="button"
           onClick={handleRefreshClick}
@@ -161,8 +170,6 @@ export const BankListItem: React.FC<BankListItemProps> = ({
               ? 'bg-slate-800 border-amber-500/40 text-amber-400 cursor-wait'
               : isBlocked
               ? 'bg-slate-900/40 border-slate-800/60 text-slate-600 opacity-40 cursor-not-allowed'
-              : isOutdated
-              ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 hover:border-amber-500/50 text-amber-400 hover:text-amber-300 active:scale-95'
               : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 hover:border-slate-600 text-slate-400 hover:text-white active:scale-95'
           }`}
         >
@@ -183,3 +190,4 @@ export const BankListItem: React.FC<BankListItemProps> = ({
     </div>
   );
 };
+
