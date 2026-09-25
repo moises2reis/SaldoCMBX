@@ -92,30 +92,33 @@ export async function fetchRatesDirectly(): Promise<ExchangeRates> {
   return rates;
 }
 
-async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
+export async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; lastSync: string }> {
   // 1. Consultar vía Supabase Edge Function ('swift-handler') con action='balance'
   try {
     const res = await callSupabase<any>('balance', {});
     if (res.success && res.data) {
-      const dataObj = res.data.data || res.data;
-      const liveBal = Number(
+      const rawData = res.data;
+      const dataObj = rawData.data || rawData.binance || rawData;
+      const rawBal =
         dataObj.totalUsd ??
-          dataObj.saldo ??
-          dataObj.balance ??
-          dataObj.total ??
-          res.data.totalUsd ??
-          res.data.saldo ??
-          0
-      );
-      if (liveBal > 0) {
-        setLocalBinanceBalance(liveBal);
-        return { totalUsd: liveBal, lastSync: new Date().toISOString() };
-      } else if (res.data.code === 1000 && liveBal === 0) {
-        setLocalBinanceBalance(0);
-        return { totalUsd: 0, lastSync: new Date().toISOString() };
+        dataObj.saldo ??
+        dataObj.balance ??
+        dataObj.total ??
+        rawData.totalUsd ??
+        rawData.saldo;
+
+      if (rawBal !== undefined && rawBal !== null) {
+        const liveBal = Number(rawBal);
+        if (!isNaN(liveBal)) {
+          const rounded = Math.round(liveBal * 100) / 100;
+          setLocalBinanceBalance(rounded);
+          return { totalUsd: rounded, lastSync: new Date().toISOString() };
+        }
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn('Error querying Supabase for Binance balance:', err);
+  }
 
   // 2. Retornar del almacenamiento local en navegador
   return getLocalBinanceBalance();
@@ -161,7 +164,7 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
           };
         });
 
-        // Asegurar que Binance esté incluido
+        // Asegurar que Binance esté incluido con su balance local/Supabase
         const binanceData = getLocalBinanceBalance();
         const bIdx = parsedAccounts.findIndex(
           (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
@@ -211,30 +214,63 @@ export async function fetchBalancesAndRates(forceFresh: boolean = false): Promis
   accounts: BankAccount[];
   rates: ExchangeRates;
 }> {
-  // 1. Intentar vía endpoint local /api con timeout adecuado (10 segundos)
+  // 1. Intentar vía endpoint local /api con timeout adecuado
   try {
     const url = forceFresh ? `/api/banks/balances?fresh=true&_t=${Date.now()}` : `/api/banks/balances?_t=${Date.now()}`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(6000),
     });
     if (res.ok) {
-      const data = await res.json();
-      if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-        const hasSomeBalance = data.accounts.some(
-          (a: BankAccount) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || a.lastSync
-        );
-        if (hasSomeBalance || data.accounts.length > 3) {
-          return data;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
+          const hasSomeBalance = data.accounts.some(
+            (a: BankAccount) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || a.lastSync
+          );
+          if (hasSomeBalance || data.accounts.length > 3) {
+            return data;
+          }
         }
       }
     }
   } catch {}
 
-  // 2. Modo Estático o Fallback Directo a Google Apps Script
-  const [accounts, rates] = await Promise.all([
+  // 2. Modo Estático (GitHub Pages) o Fallback: Consultar Apps Script + Tasas + Supabase Binance en paralelo
+  const [accounts, rates, binanceData] = await Promise.all([
     fetchAccountsDirectly(),
     fetchRatesDirectly(),
+    getOrFetchBinanceBalance(),
   ]);
+
+  // Actualizar el saldo y fecha de sincronización de Binance obtenido desde Supabase
+  const bIdx = accounts.findIndex(
+    (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
+  );
+  if (bIdx !== -1) {
+    if (binanceData.totalUsd > 0 || binanceData.lastSync) {
+      accounts[bIdx].balanceNative = binanceData.totalUsd;
+      accounts[bIdx].montoUsd = binanceData.totalUsd;
+      if (binanceData.lastSync) {
+        accounts[bIdx].lastSync = binanceData.lastSync;
+      }
+    }
+  } else {
+    accounts.push({
+      id: 'binance',
+      bankId: 'binance',
+      bankName: 'Binance',
+      bankShort: 'BINANCE',
+      accountType: 'ID',
+      accountNumber: '1272204580',
+      categoria: 'Binance',
+      nativeCurrency: 'USD',
+      balanceNative: binanceData.totalUsd,
+      montoUsd: binanceData.totalUsd,
+      lastSync: binanceData.lastSync || new Date().toISOString(),
+      linkActualizar: '',
+    });
+  }
 
   return {
     success: true,
@@ -285,19 +321,33 @@ export async function syncAllAccounts(): Promise<BankAccount[]> {
 export async function syncSingleBank(
   id: string
 ): Promise<{ account?: BankAccount; accounts?: BankAccount[] }> {
+  const isBinance = id === 'binance' || id.toLowerCase().includes('binance');
+
+  // Si es Binance, consultar en vivo vía Supabase Edge Function
+  if (isBinance) {
+    const binanceData = await getOrFetchBinanceBalance();
+    const accounts = await fetchAccountsDirectly();
+    const bIdx = accounts.findIndex(
+      (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
+    );
+    if (bIdx !== -1) {
+      accounts[bIdx].balanceNative = binanceData.totalUsd;
+      accounts[bIdx].montoUsd = binanceData.totalUsd;
+      accounts[bIdx].lastSync = binanceData.lastSync || new Date().toISOString();
+      return { account: accounts[bIdx], accounts };
+    }
+  }
+
   try {
     const res = await fetch(`/api/banks/sync/${encodeURIComponent(id)}`, {
       method: 'POST',
+      signal: AbortSignal.timeout(6000),
     });
     if (res.ok) {
       const data = await res.json();
       return data;
     }
   } catch {}
-
-  if (id === 'binance' || id.toLowerCase().includes('binance')) {
-    await getOrFetchBinanceBalance();
-  }
 
   const accounts = await fetchAccountsDirectly();
   const account = accounts.find((a) => a.id === id);

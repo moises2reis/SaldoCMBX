@@ -519,7 +519,7 @@ export default function App() {
             isSyncing={isSyncing}
             hideBalances={hideHeaderTotal}
             onToggleHideBalances={handleToggleHideHeaderTotal}
-            onRefresh={() => loadData(false)}
+            onRefresh={() => loadData(false, true)}
             categoryLabel={currentCategoryLabel}
           />
 

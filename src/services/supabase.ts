@@ -1,5 +1,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+export const DEFAULT_SUPABASE_URL = 'https://htxzsefmejercvwlarfl.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0eHpzZWZtZWplcmN2d2xhcmZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMzE2NjIsImV4cCI6MjEwNDgwNzY2Mn0.oxjaY99j5dvFWfOPiXSVCigc1MKKLxTXMjNB1m_IxVw';
+
 const ENV_SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || '';
 const ENV_SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
 
@@ -17,11 +21,13 @@ export function cleanSupabaseUrl(rawUrl: string): string {
 export function getSupabaseConfig(): { url: string; anonKey: string; isConfigured: boolean } {
   const rawUrl =
     ENV_SUPABASE_URL ||
-    (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_project_url') || '' : '');
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_project_url') || '' : '') ||
+    DEFAULT_SUPABASE_URL;
   const url = cleanSupabaseUrl(rawUrl);
   const anonKey =
     ENV_SUPABASE_ANON_KEY ||
-    (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_anon_key') || '' : '');
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('sb_anon_key') || '' : '') ||
+    DEFAULT_SUPABASE_ANON_KEY;
 
   return {
     url,
@@ -61,7 +67,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 /**
  * Función central callSupabase() con arquitectura serverless y fallback de 2 capas:
  * 1. Intento por proxy local (/api/...)
- * 2. Fallback a Supabase Edge Function ('swift-handler')
+ * 2. Fallback a Supabase Edge Function ('swift-handler') en Brasil (sa-east-1)
  */
 export async function callSupabase<T = any>(
   action: string,
@@ -76,65 +82,70 @@ export async function callSupabase<T = any>(
     }
   }
 
+  const requestBody = { action, ...processedPayload };
+
   // 2. Capa 1: Intento por proxy local Express (desarrollo local)
   try {
     const localRes = await fetch(`/api/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(processedPayload),
+      signal: AbortSignal.timeout(3500),
     });
     if (localRes.ok) {
-      const json = await localRes.json();
-      return { success: true, data: json };
+      const contentType = localRes.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = await localRes.json();
+        return { success: true, data: json };
+      }
     }
   } catch {
-    // Si no hay backend local, continuar a Supabase Edge Function
+    // Si no hay backend local (ej. GitHub Pages), continuar directamente a Supabase Edge Function
   }
 
-  // 3. Capa 2: Fallback a Supabase Edge Function ('swift-handler')
+  // 3. Capa 2: Consulta directa a Supabase Edge Function ('swift-handler')
   const { url, anonKey, isConfigured } = getSupabaseConfig();
   if (!isConfigured) {
     return { success: false, error: 'No backend or Supabase configuration available' };
   }
 
-  const client = getSupabaseClient();
-  const requestBody = { action, ...processedPayload };
+  const endpoint = `${url}/functions/v1/swift-handler`;
 
-  if (client) {
-    try {
-      const { data, error } = await client.functions.invoke('swift-handler', {
-        body: requestBody,
-        headers: { 'x-region': 'sa-east-1' },
-      });
+  try {
+    const directResp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anonKey}`,
+        apikey: anonKey,
+        'x-region': 'sa-east-1',
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(12000),
+    });
 
-      if (!error && data) {
-        return { success: true, data };
-      }
-      if (error) {
-        // Fallback fetch directo
-        try {
-          const directResp = await fetch(`${url}/functions/v1/swift-handler`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${anonKey}`,
-              apikey: anonKey,
-              'x-region': 'sa-east-1',
-            },
-            body: JSON.stringify(requestBody),
-          });
-          if (directResp.ok) {
-            const directJson = await directResp.json();
-            return { success: true, data: directJson };
-          }
-        } catch {}
-
-        return { success: false, error: error.message };
-      }
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'Error invocando Edge Function' };
+    if (directResp.ok) {
+      const directJson = await directResp.json();
+      return { success: true, data: directJson };
     }
+  } catch (err: any) {
+    // Fallback con SDK de Supabase si fetch directo falló por CORS o red
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const { data, error } = await client.functions.invoke('swift-handler', {
+          body: requestBody,
+          headers: { 'x-region': 'sa-east-1' },
+        });
+
+        if (!error && data) {
+          return { success: true, data };
+        }
+      }
+    } catch {}
+
+    return { success: false, error: err?.message || 'Error invocando Edge Function' };
   }
 
-  return { success: false, error: 'Respuesta no disponible' };
+  return { success: false, error: 'Respuesta no disponible de Supabase' };
 }

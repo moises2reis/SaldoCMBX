@@ -8,9 +8,9 @@
     "accountNumber": "V10940603",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 671257.12,
+    "balanceNative": 2622026.26,
     "montoUsd": 0,
-    "lastSync": "24/09/2026 11:56:02 AM",
+    "lastSync": "25/09/2026 09:18:35 AM",
     "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BDV"
   },
   {
@@ -22,9 +22,9 @@
     "accountNumber": "V26306188",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 82116.85,
+    "balanceNative": 2.66,
     "montoUsd": 0,
-    "lastSync": "24/09/2026 11:47:08 AM",
+    "lastSync": "24/09/2026 10:37:00 PM",
     "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BANESCO"
   },
   {
@@ -36,9 +36,9 @@
     "accountNumber": "V10940603",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 515236.76,
+    "balanceNative": 462647.25,
     "montoUsd": 0,
-    "lastSync": "24/09/2026 11:49:09 AM",
+    "lastSync": "25/09/2026 09:19:16 AM",
     "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BNC"
   },
   {
@@ -78,9 +78,9 @@
     "accountNumber": "",
     "categoria": "Efectivo",
     "nativeCurrency": "VES",
-    "balanceNative": 0,
-    "montoUsd": 0,
-    "lastSync": "",
+    "balanceNative": 77150,
+    "montoUsd": 2950,
+    "lastSync": "24/09/2026 05:43:57 PM",
     "linkActualizar": ""
   },
   {
