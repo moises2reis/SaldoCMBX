@@ -1,7 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { formatSmartUpdateTime, isOlderThanOneHourAndHalf } from '../utils/formatters';
-import { X, Check, Landmark, Gem, Banknote, Loader2, Zap, Edit3, Clock } from 'lucide-react';
+import { formatSmartUpdateTime, isOlderThanOneHourAndHalf, formatBs, formatUSD, formatForeign } from '../utils/formatters';
+import {
+  X,
+  Check,
+  Landmark,
+  Gem,
+  Banknote,
+  Loader2,
+  Zap,
+  Edit3,
+  Clock,
+  ArrowDownUp,
+  Plus,
+  Minus,
+  TrendingUp,
+  TrendingDown,
+} from 'lucide-react';
 
 interface EditBankBalanceModalProps {
   isOpen: boolean;
@@ -75,8 +90,13 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
   const [montoBsInput, setMontoBsInput] = useState<string>('');
   const [montoUsdInput, setMontoUsdInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'macro' | 'manual'>('macro');
+  const [activeTab, setActiveTab] = useState<'macro' | 'manual' | 'delta'>('macro');
   const [macroTriggered, setMacroTriggered] = useState<boolean>(false);
+
+  // Estados para la pestaña Ingreso / Egreso
+  const [movementType, setMovementType] = useState<'ingreso' | 'egreso'>('ingreso');
+  const [movementAmount, setMovementAmount] = useState<string>('');
+  const [movementCurrency, setMovementCurrency] = useState<'USD' | 'VES'>('USD');
 
   useEffect(() => {
     if (account) {
@@ -84,11 +104,14 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
       if (isEf) {
         setMontoBsInput(formatSpanishNumber(account.balanceNative));
         setMontoUsdInput(formatSpanishNumber(account.montoUsd || 0));
-        setActiveTab('manual'); // Efectivo por defecto en manual
+        setActiveTab('delta'); // Efectivo por defecto en Ingreso/Egreso
+        setMovementCurrency('USD');
       } else {
         setBalanceInput(formatSpanishNumber(account.balanceNative));
         setActiveTab('macro'); // Bancos por defecto en macro
       }
+      setMovementAmount('');
+      setMovementType('ingreso');
       setMacroTriggered(false);
     }
   }, [account, isOpen]);
@@ -121,12 +144,12 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
     if (onSyncMacro) {
       await onSyncMacro(account.id);
     }
-    // Cerrar el modal después de disparar la macro tras un breve feedback
     setTimeout(() => {
       onClose();
     }, 1200);
   };
 
+  // Guardar cambio de saldo manual directo
   const handleSubmitManual = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -150,6 +173,75 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  // Guardar cálculo de Ingreso / Egreso sumando o restando al monto del servidor
+  const handleSubmitDelta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const delta = parseSpanishNumber(movementAmount);
+    if (delta <= 0) return;
+
+    setIsSubmitting(true);
+    try {
+      const bankNameToSend = account.bankShort || account.bankId || account.bankName;
+
+      if (isEfectivo) {
+        const currentBs = account.balanceNative || 0;
+        const currentUsd = account.montoUsd || 0;
+
+        let finalBs = currentBs;
+        let finalUsd = currentUsd;
+
+        if (movementCurrency === 'USD') {
+          finalUsd =
+            movementType === 'ingreso' ? currentUsd + delta : Math.max(0, currentUsd - delta);
+        } else {
+          finalBs =
+            movementType === 'ingreso' ? currentBs + delta : Math.max(0, currentBs - delta);
+        }
+
+        await onSave(bankNameToSend, finalBs, account.id, finalUsd);
+      } else {
+        const currentBalance = account.balanceNative || 0;
+        const finalBalance =
+          movementType === 'ingreso'
+            ? currentBalance + delta
+            : Math.max(0, currentBalance - delta);
+
+        await onSave(bankNameToSend, finalBalance, account.id);
+      }
+
+      onClose();
+    } catch (err) {
+      console.error('Error applying ingreso/egreso movement:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Cálculo en vivo para la vista previa de Ingreso / Egreso
+  const deltaNum = parseSpanishNumber(movementAmount);
+  let previewCurrent = 0;
+  let previewFinal = 0;
+  let previewUnit = currencyUnit;
+
+  if (isEfectivo) {
+    if (movementCurrency === 'USD') {
+      previewCurrent = account.montoUsd || 0;
+      previewUnit = '$ USD';
+      previewFinal =
+        movementType === 'ingreso' ? previewCurrent + deltaNum : Math.max(0, previewCurrent - deltaNum);
+    } else {
+      previewCurrent = account.balanceNative || 0;
+      previewUnit = 'Bs.';
+      previewFinal =
+        movementType === 'ingreso' ? previewCurrent + deltaNum : Math.max(0, previewCurrent - deltaNum);
+    }
+  } else {
+    previewCurrent = account.balanceNative || 0;
+    previewUnit = currencyUnit;
+    previewFinal =
+      movementType === 'ingreso' ? previewCurrent + deltaNum : Math.max(0, previewCurrent - deltaNum);
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -189,31 +281,43 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
           </button>
         </div>
 
-        {/* Pestañas: Actualizar con Macro vs Actualizar Manual */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950 border border-slate-800 rounded-2xl mb-4">
+        {/* Pestañas: Con Macro vs Manual vs Ingreso/Egreso */}
+        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-950 border border-slate-800 rounded-2xl mb-4">
           <button
             type="button"
             onClick={() => setActiveTab('macro')}
-            className={`py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+            className={`py-2 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
               activeTab === 'macro'
                 ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
             }`}
           >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Con Macro</span>
+            <Zap className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Macro</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('manual')}
-            className={`py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+            className={`py-2 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
               activeTab === 'manual'
                 ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-sm'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
             }`}
           >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>Manual</span>
+            <Edit3 className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Manual</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('delta')}
+            className={`py-2 px-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+              activeTab === 'delta'
+                ? 'bg-slate-800 text-emerald-400 border border-slate-700 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+            }`}
+          >
+            <ArrowDownUp className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Ingreso/Egreso</span>
           </button>
         </div>
 
@@ -284,7 +388,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
           </div>
         )}
 
-        {/* CONTENIDO PESTAÑA: ACTUALIZAR MANUAL */}
+        {/* CONTENIDO PESTAÑA: ACTUALIZAR MANUAL (SALDO TOTAL ABSOLUTO) */}
         {activeTab === 'manual' && (
           <form onSubmit={handleSubmitManual} className="space-y-4">
             {isEfectivo ? (
@@ -381,7 +485,182 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
                 ) : (
                   <>
                     <Check className="w-3.5 h-3.5" />
-                    <span>Guardar Manual</span>
+                    <span>Guardar Saldo</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* CONTENIDO PESTAÑA: INGRESO / EGRESO (SUMA O RESTA DEL SERVIDOR) */}
+        {activeTab === 'delta' && (
+          <form onSubmit={handleSubmitDelta} className="space-y-4">
+            {/* Toggle Ingreso vs Egreso */}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Tipo de movimiento:
+              </label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 border border-slate-800 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setMovementType('ingreso')}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                    movementType === 'ingreso'
+                      ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/60 shadow-sm ring-1 ring-emerald-500/20'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
+                  }`}
+                >
+                  <Plus className="w-4 h-4 text-emerald-400" />
+                  <span>Ingreso (+)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMovementType('egreso')}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                    movementType === 'egreso'
+                      ? 'bg-rose-950/80 text-rose-400 border border-rose-500/60 shadow-sm ring-1 ring-rose-500/20'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
+                  }`}
+                >
+                  <Minus className="w-4 h-4 text-rose-400" />
+                  <span>Egreso (-)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Selector de moneda (solo para Efectivo que maneja USD y Bs) */}
+            {isEfectivo && (
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Moneda a modificar:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMovementCurrency('USD')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-semibold font-mono border transition-all ${
+                      movementCurrency === 'USD'
+                        ? 'bg-slate-800 text-emerald-400 border-emerald-500/60 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    $ USD ({formatSpanishNumber(account.montoUsd || 0)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMovementCurrency('VES')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-semibold font-mono border transition-all ${
+                      movementCurrency === 'VES'
+                        ? 'bg-slate-800 text-emerald-400 border-emerald-500/60 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    Bs. ({formatSpanishNumber(account.balanceNative || 0)})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Input del Monto a Sumar o Restar */}
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Monto a {movementType === 'ingreso' ? 'sumar' : 'restar'}:
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={movementAmount}
+                  onChange={(e) => handleGenericChange(e, setMovementAmount)}
+                  autoFocus
+                  disabled={isSubmitting}
+                  placeholder="0,00"
+                  className={`w-full bg-slate-950 border rounded-2xl px-3.5 py-3 text-xl font-mono font-bold focus:outline-none transition-all placeholder:text-slate-600 ${
+                    movementType === 'ingreso'
+                      ? 'border-slate-800 text-emerald-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                      : 'border-slate-800 text-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                  }`}
+                />
+                <span
+                  className={`absolute right-3.5 top-3.5 text-xs font-mono font-bold ${
+                    movementType === 'ingreso' ? 'text-emerald-400/90' : 'text-rose-400/90'
+                  }`}
+                >
+                  {previewUnit}
+                </span>
+              </div>
+            </div>
+
+            {/* Tarjeta de cálculo y vista previa en tiempo real */}
+            <div className="bg-slate-950/90 border border-slate-800/90 rounded-2xl p-3.5 space-y-2 text-xs font-mono">
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Saldo en servidor:</span>
+                <span className="font-semibold text-slate-300 tabular-nums">
+                  {formatSpanishNumber(previewCurrent)} {previewUnit}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">
+                  {movementType === 'ingreso' ? 'Ingreso (+):' : 'Egreso (-):'}
+                </span>
+                <span
+                  className={`font-bold tabular-nums flex items-center gap-1 ${
+                    movementType === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {movementType === 'ingreso' ? '+' : '-'} {formatSpanishNumber(deltaNum)}{' '}
+                  {previewUnit}
+                </span>
+              </div>
+
+              <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
+                <span className="font-bold text-white">Nuevo saldo resultante:</span>
+                <span
+                  className={`font-extrabold text-sm sm:text-base tabular-nums ${
+                    movementType === 'ingreso' ? 'text-emerald-400' : 'text-white'
+                  }`}
+                >
+                  {formatSpanishNumber(previewFinal)} {previewUnit}
+                </span>
+              </div>
+            </div>
+
+            {/* Botones de acción Ingreso / Egreso */}
+            <div className="flex gap-2.5 justify-end pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white rounded-xl border border-slate-800 hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || deltaNum <= 0}
+                className={`px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50 disabled:pointer-events-none rounded-xl flex items-center gap-2 transition-all shadow-lg ${
+                  movementType === 'ingreso'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
+                    : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/50'
+                }`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Aplicando...</span>
+                  </>
+                ) : (
+                  <>
+                    {movementType === 'ingreso' ? (
+                      <TrendingUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <TrendingDown className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {movementType === 'ingreso' ? 'Aplicar Ingreso' : 'Aplicar Egreso'}
+                    </span>
                   </>
                 )}
               </button>

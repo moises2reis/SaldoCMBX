@@ -11,6 +11,7 @@ interface BankListItemProps {
   hideBalances?: boolean;
   isSyncing?: boolean;
   isBlocked?: boolean;
+  isLoadingInitial?: boolean;
   protectionSeconds?: number;
   justUpdated?: boolean;
   onSync?: (bankId: string) => void;
@@ -21,6 +22,7 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   account,
   activeRate,
   hideBalances = false,
+  isLoadingInitial = false,
   onEditBalance,
 }) => {
   const [, setTick] = useState(0);
@@ -115,7 +117,12 @@ export const BankListItem: React.FC<BankListItemProps> = ({
 
       {/* Derecha: Montos y tiempo transcurrido */}
       <div className="text-right flex flex-col items-end shrink-0">
-        {isZero ? (
+        {isLoadingInitial && isZero ? (
+          <div className="space-y-1.5 flex flex-col items-end">
+            <div className="h-4 w-16 bg-slate-800 animate-pulse rounded-md" />
+            <div className="h-3 w-12 bg-slate-800/60 animate-pulse rounded-md" />
+          </div>
+        ) : isZero ? (
           /* Monto en 0: un solo '-' en gris */
           <div className="text-sm sm:text-base font-bold font-mono text-slate-500 tabular-nums leading-tight">
             -

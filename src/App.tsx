@@ -48,6 +48,16 @@ export default function App() {
   });
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isFirstLoading, setIsFirstLoading] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('cached_bank_accounts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return !Array.isArray(parsed) || parsed.length === 0 || !parsed.some((a: BankAccount) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0));
+      }
+    } catch {}
+    return true;
+  });
   const [syncingBankId, setSyncingBankId] = useState<string | null>(null);
   const [monitoredBankId, setMonitoredBankId] = useState<string | null>(null);
   const [binanceSyncing, setBinanceSyncing] = useState<boolean>(false);
@@ -137,10 +147,10 @@ export default function App() {
   };
 
   // Cargar datos en vivo (Bancos y Tasas Oficiales en cada carga/actualización)
-  const loadData = useCallback(async (silent = false) => {
+  const loadData = useCallback(async (silent = false, forceFresh = false) => {
     if (!silent) setIsSyncing(true);
     try {
-      const data = await fetchBalancesAndRates();
+      const data = await fetchBalancesAndRates(forceFresh);
 
       if (data?.rates && (data.rates.bcv || data.rates.bcvUsd)) {
         setRates((prev) => {
@@ -153,11 +163,15 @@ export default function App() {
       }
 
       if (data?.accounts && data.accounts.length > 0) {
-        setAccounts((prevAccounts) => {
-          const hasAnyLiveBalance = data.accounts.some(
-            (a) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || Boolean(a.lastSync)
-          );
+        const hasAnyLiveBalance = data.accounts.some(
+          (a) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || Boolean(a.lastSync)
+        );
 
+        if (hasAnyLiveBalance) {
+          setIsFirstLoading(false);
+        }
+
+        setAccounts((prevAccounts) => {
           // Si la respuesta no trajo saldos válidos pero teníamos datos en caché, preservar la caché
           if (!hasAnyLiveBalance && prevAccounts.some((a) => a.balanceNative > 0)) {
             return prevAccounts;
@@ -168,6 +182,21 @@ export default function App() {
           } catch {}
           return data.accounts;
         });
+
+        // Si la primera carga vino vacía de saldos, reintentar automáticamente tras 1.5 segundos
+        if (!hasAnyLiveBalance) {
+          setTimeout(() => {
+            fetchBalancesAndRates(true).then((retryData) => {
+              if (retryData?.accounts && retryData.accounts.some((a) => a.balanceNative > 0 || a.lastSync)) {
+                setAccounts(retryData.accounts);
+                setIsFirstLoading(false);
+                try {
+                  localStorage.setItem('cached_bank_accounts', JSON.stringify(retryData.accounts));
+                } catch {}
+              }
+            });
+          }, 1500);
+        }
       }
       return data;
     } catch (err) {
@@ -181,7 +210,7 @@ export default function App() {
   // Cargar datos al entrar a la página (en segundo plano si ya hay caché para inicio instantáneo)
   useEffect(() => {
     const hasCached = !!localStorage.getItem('cached_bank_accounts');
-    loadData(hasCached);
+    loadData(hasCached, false);
   }, [loadData]);
 
   // Actualización en segundo plano al regresar a la pestaña activa, enfocar o recargar la página
@@ -537,6 +566,7 @@ export default function App() {
                     bcvUsdRate={bcvUsdRate}
                     bcvEurRate={bcvEurRate}
                     hideBalances={hideCardBalances}
+                    isLoadingInitial={isFirstLoading}
                     isSyncing={
                       isBinanceAcc
                         ? binanceSyncing

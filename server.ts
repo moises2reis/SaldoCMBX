@@ -220,8 +220,9 @@ async function startServer() {
     }
   }
 
-  // Cache local de cuentas
+  // Cache local de cuentas y última sincronización
   let cachedAccounts: BankAccount[] = loadCachedAccounts();
+  let lastFetchTimestamp = 0;
 
   // Función para obtener tasas oficiales dinámicas desde el Google Apps Script
   async function fetchRatesFromAppScript() {
@@ -233,7 +234,7 @@ async function startServer() {
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'application/json, text/plain, */*',
         },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (response.ok) {
@@ -270,14 +271,14 @@ async function startServer() {
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'application/json, text/plain, */*',
         },
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (response.ok) {
         const rawData = (await response.json()) as RawBankRecord[];
         if (Array.isArray(rawData) && rawData.length > 0) {
           const seenIds = new Set<string>();
-          cachedAccounts = rawData.map((item, index) => {
+          const parsedAccounts = rawData.map((item, index) => {
             const rawName = String(item.id_banco || '').trim();
             let cleanId =
               rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
@@ -286,7 +287,7 @@ async function startServer() {
             }
             seenIds.add(cleanId);
             const isBinance = rawName.toLowerCase().includes('binance');
-            const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Banco');
+            const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Bancos');
             const rawUsd = item['monto_$'] ?? item.monto_$ ?? item.monto_usd ?? item.monto_dolar;
 
             return {
@@ -296,15 +297,20 @@ async function startServer() {
               bankShort: rawName,
               accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
               accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
-              categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Banco'),
-              nativeCurrency: isBinance ? 'USD' : 'VES',
+              categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Bancos'),
+              nativeCurrency: (isBinance ? 'USD' : 'VES') as 'USD' | 'VES',
               balanceNative: parseAmount(item.monto_bs),
               montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,
               lastSync: item.fecha_actualizacion ? String(item.fecha_actualizacion) : '',
               linkActualizar: item.link_actualizar ? String(item.link_actualizar) : '',
             };
           });
-          saveCachedAccounts(cachedAccounts);
+
+          if (parsedAccounts.length > 0) {
+            cachedAccounts = parsedAccounts;
+            lastFetchTimestamp = Date.now();
+            saveCachedAccounts(cachedAccounts);
+          }
         }
       }
     } catch {
@@ -333,7 +339,6 @@ async function startServer() {
         linkActualizar: '',
       });
     } else {
-      // Si el saldo de Binance proviene de la API de Binance o es mayor a 0, actualizarlo
       cachedAccounts[binanceIndex].accountNumber = '1272204580';
       cachedAccounts[binanceIndex].accountType = 'ID';
       if (!cachedAccounts[binanceIndex].categoria || cachedAccounts[binanceIndex].categoria === 'Digital') {
@@ -351,10 +356,17 @@ async function startServer() {
     return cachedAccounts;
   }
 
-  // Carga inicial al arrancar: Tasas, Binance P2P y Binance Wallet
+  // Carga inicial y refresco periódico en segundo plano
+  fetchAccountsFromAppScript().catch(() => {});
   fetchRatesFromAppScript().catch(() => {});
   obtenerTasaBinanceP2P().catch(() => {});
   getTotalUSDT().catch(() => {});
+
+  // Refrescar cada 45 segundos para que cualquier petición obtenga respuesta instantánea de 0ms
+  setInterval(() => {
+    fetchAccountsFromAppScript().catch(() => {});
+    fetchRatesFromAppScript().catch(() => {});
+  }, 45000);
 
   // Rutas API
   app.get('/api/rates', async (_req, res) => {
@@ -454,11 +466,28 @@ async function startServer() {
     res.status(400).json({ success: false, error: 'Proporciona ?total=MONTO' });
   });
 
-  // Consulta en tiempo real a Google Apps Script de saldos, Binance y tasas al entrar/refrescar
-  app.get('/api/banks/balances', async (_req, res) => {
-    // Sincronizar Binance en segundo plano sin bloquear la respuesta de los bancos
+  // Consulta en tiempo real de saldos, Binance y tasas al entrar/refrescar
+  app.get('/api/banks/balances', async (req, res) => {
+    // Sincronizar Binance en segundo plano sin bloquear
     getTotalUSDT().catch(() => {});
 
+    const isForceRefresh = req.query.fresh === 'true' || req.query.force === 'true';
+    const isCacheWarm =
+      cachedAccounts.some((a) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0)) &&
+      lastFetchTimestamp > 0 &&
+      Date.now() - lastFetchTimestamp < 45000;
+
+    if (isCacheWarm && !isForceRefresh) {
+      // Retornar de inmediato (0ms) con datos cálidos de caché
+      return res.json({
+        success: true,
+        accounts: cachedAccounts,
+        rates: cachedRates,
+        serverTime: new Date().toISOString(),
+      });
+    }
+
+    // Si el caché está frío o se solicitó refresco manual, consultar fuentes
     const [accounts, rates, p2pPrice] = await Promise.all([
       fetchAccountsFromAppScript(),
       fetchRatesFromAppScript(),
@@ -473,7 +502,7 @@ async function startServer() {
     res.json({
       success: true,
       accounts: accounts && accounts.length > 0 ? accounts : cachedAccounts,
-      rates,
+      rates: rates || cachedRates,
       serverTime: new Date().toISOString(),
     });
   });

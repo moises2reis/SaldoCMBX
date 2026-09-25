@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { Download, Share2, PlusSquare, X, Smartphone, Sparkles } from 'lucide-react';
+import { Download, Share2, PlusSquare, X, Smartphone, Sparkles, MoreVertical } from 'lucide-react';
 
 export const PWAInstallButton: React.FC = () => {
-  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
-  const [showIOSGuide, setShowIOSGuide] = useState<boolean>(false);
+  const { isInstallable, isInstalled, isIOS, isAndroid, install } = usePWAInstall();
+  const [showGuide, setShowGuide] = useState<boolean>(false);
   const [dismissed, setDismissed] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem('pwa_prompt_dismissed') === 'true';
@@ -13,7 +13,7 @@ export const PWAInstallButton: React.FC = () => {
     }
   });
 
-  // Si ya está ejecutándose como aplicación instalada (standalone) o el usuario lo cerró en esta sesión
+  // Si ya está ejecutándose como aplicación instalada (standalone) o el usuario lo descartó en esta sesión
   if (isInstalled || dismissed) {
     return null;
   }
@@ -27,14 +27,14 @@ export const PWAInstallButton: React.FC = () => {
   };
 
   const handleInstallClick = async () => {
+    // 1. Si el navegador soporta el diálogo nativo directo (Android / Chromium), dispararlo automáticamente
     if (isInstallable) {
-      await install();
-    } else if (isIOS) {
-      setShowIOSGuide(true);
-    } else {
-      // Para otros navegadores o si no se disparó beforeinstallprompt aún, mostrar la guía
-      setShowIOSGuide(true);
+      const success = await install();
+      if (success) return;
     }
+
+    // 2. Si no se ha capturado el evento nativo o es iOS/Android sin prompt directo, mostrar la guía adaptada
+    setShowGuide(true);
   };
 
   return (
@@ -51,13 +51,15 @@ export const PWAInstallButton: React.FC = () => {
                 Instalar ComboxBanks
               </span>
               <span className="inline-flex items-center gap-0.5 text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
-                <Sparkles className="w-2.5 h-2.5" /> PWA
+                <Sparkles className="w-2.5 h-2.5" /> App
               </span>
             </div>
             <p className="text-[11px] text-slate-400 truncate">
-              {isIOS
+              {isAndroid
+                ? 'Toca para instalar directamente en tu Android'
+                : isIOS
                 ? 'Úsala en iOS sin barra de navegación'
-                : 'Instala la app en tu Android o pantalla de inicio'}
+                : 'Instala la app en tu dispositivo para acceso rápido'}
             </p>
           </div>
         </div>
@@ -83,11 +85,11 @@ export const PWAInstallButton: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal Guía de Instalación para iOS / Safari */}
-      {showIOSGuide && (
+      {/* Modal Guía de Instalación según el Sistema Operativo */}
+      {showGuide && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setShowIOSGuide(false)}
+          onClick={() => setShowGuide(false)}
         >
           <div
             className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl relative space-y-4"
@@ -100,7 +102,11 @@ export const PWAInstallButton: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white tracking-tight">
-                    Instalar en iPhone / iPad
+                    {isAndroid
+                      ? 'Instalar en Android'
+                      : isIOS
+                      ? 'Instalar en iPhone / iPad'
+                      : 'Instalar Aplicación'}
                   </h3>
                   <p className="text-[11px] text-slate-400">
                     Añade la app a tu pantalla de inicio
@@ -109,62 +115,112 @@ export const PWAInstallButton: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setShowIOSGuide(false)}
+                onClick={() => setShowGuide(false)}
                 className="text-slate-400 hover:text-white p-1 rounded-xl hover:bg-slate-800 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-slate-300">
-              <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
-                <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
-                  1
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5 font-semibold text-white">
-                    <span>Toca el botón</span>
-                    <Share2 className="w-3.5 h-3.5 text-blue-400 inline" />
-                    <span>Compartir</span>
+            {isAndroid ? (
+              /* Instrucciones para Android */
+              <div className="space-y-3 text-xs text-slate-300">
+                <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
+                  <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
+                    1
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    En la barra inferior de Safari en tu iPhone.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
-                <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
-                  2
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5 font-semibold text-white">
-                    <span>Selecciona</span>
-                    <PlusSquare className="w-3.5 h-3.5 text-emerald-400 inline" />
-                    <span>Agregar a inicio</span>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-white">
+                      <span>Toca el menú</span>
+                      <MoreVertical className="w-3.5 h-3.5 text-emerald-400 inline" />
+                      <span>(3 puntos)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      En la esquina superior derecha de Google Chrome o de tu navegador.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    Desliza hacia abajo en las opciones hasta encontrar "Agregar a pantalla de inicio".
-                  </p>
                 </div>
-              </div>
 
-              <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
-                <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
-                  3
+                <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
+                  <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
+                    2
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-white">
+                      <span>Selecciona</span>
+                      <Download className="w-3.5 h-3.5 text-emerald-400 inline" />
+                      <span>"Instalar aplicación"</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      O la opción "Agregar a la pantalla principal".
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="font-semibold text-white">Toca "Agregar"</p>
-                  <p className="text-[11px] text-slate-400">
-                    ¡Listo! Se creará el acceso directo como una app independiente sin barras del navegador.
-                  </p>
+
+                <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
+                  <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
+                    3
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-white">Confirma "Instalar"</p>
+                    <p className="text-[11px] text-slate-400">
+                      La app se guardará en tu teléfono y abrirá en pantalla completa sin barra de navegación.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Instrucciones para iOS */
+              <div className="space-y-3 text-xs text-slate-300">
+                <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
+                  <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
+                    1
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-white">
+                      <span>Toca el botón</span>
+                      <Share2 className="w-3.5 h-3.5 text-blue-400 inline" />
+                      <span>Compartir</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      En la barra inferior de Safari en tu iPhone.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
+                  <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
+                    2
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-white">
+                      <span>Selecciona</span>
+                      <PlusSquare className="w-3.5 h-3.5 text-emerald-400 inline" />
+                      <span>Agregar a inicio</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Desliza hacia abajo en las opciones hasta encontrar "Agregar a pantalla de inicio".
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
+                  <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">
+                    3
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-white">Toca "Agregar"</p>
+                    <p className="text-[11px] text-slate-400">
+                      ¡Listo! Se creará el acceso directo como una app independiente sin barras del navegador.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <button
               type="button"
-              onClick={() => setShowIOSGuide(false)}
+              onClick={() => setShowGuide(false)}
               className="w-full py-2.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
             >
               Entendido

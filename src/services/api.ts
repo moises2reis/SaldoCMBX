@@ -206,25 +206,31 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
 /**
  * Consulta de Saldos y Tasas (Compatible con Servidor Express y GitHub Pages estático)
  */
-export async function fetchBalancesAndRates(): Promise<{
+export async function fetchBalancesAndRates(forceFresh: boolean = false): Promise<{
   success: boolean;
   accounts: BankAccount[];
   rates: ExchangeRates;
 }> {
-  // 1. Intentar vía endpoint local /api con timeout de 4 segundos
+  // 1. Intentar vía endpoint local /api con timeout adecuado (10 segundos)
   try {
-    const res = await fetch('/api/banks/balances', {
-      signal: AbortSignal.timeout(4000),
+    const url = forceFresh ? `/api/banks/balances?fresh=true&_t=${Date.now()}` : `/api/banks/balances?_t=${Date.now()}`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
     });
     if (res.ok) {
       const data = await res.json();
       if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-        return data;
+        const hasSomeBalance = data.accounts.some(
+          (a: BankAccount) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || a.lastSync
+        );
+        if (hasSomeBalance || data.accounts.length > 3) {
+          return data;
+        }
       }
     }
   } catch {}
 
-  // 2. Modo Estático o Fallback Directo
+  // 2. Modo Estático o Fallback Directo a Google Apps Script
   const [accounts, rates] = await Promise.all([
     fetchAccountsDirectly(),
     fetchRatesDirectly(),
