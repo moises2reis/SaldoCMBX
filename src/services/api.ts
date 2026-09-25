@@ -11,6 +11,121 @@ export const APPSCRIPT_URL =
 export const RATES_APPSCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbw-Hi0SA7yR6EMhU_dVCVO-H-9_bOQNHMgMTKXDkbctGEvGrFQjLupkJp8haTme08aC/exec';
 
+function normalizeName(name: string): string {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Fusiona de forma segura cualquier lista de cuentas con la lista maestra base (INITIAL_ACCOUNTS).
+ * Garantiza que NUNCA desaparezcan los bancos tradicionales ni el efectivo aunque la API falle.
+ */
+export function mergeAccountsWithMaster(
+  incomingList: BankAccount[] = [],
+  previousList: BankAccount[] = []
+): BankAccount[] {
+  // Mapa de todas las cuentas maestras por id normalizado
+  const masterMap = new Map<string, BankAccount>();
+
+  // 1. Inicializar con la plantilla maestra
+  INITIAL_ACCOUNTS.forEach((acc) => {
+    masterMap.set(acc.id, { ...acc });
+    masterMap.set(normalizeName(acc.bankName), { ...acc });
+  });
+
+  // 2. Incorporar datos previos si existen
+  previousList.forEach((prev) => {
+    const key = masterMap.has(prev.id)
+      ? prev.id
+      : masterMap.has(normalizeName(prev.bankName))
+      ? normalizeName(prev.bankName)
+      : null;
+
+    if (key) {
+      const existing = masterMap.get(key)!;
+      masterMap.set(existing.id, {
+        ...existing,
+        ...prev,
+        // Proteger categoría original
+        categoria: prev.categoria || existing.categoria,
+      });
+    } else {
+      masterMap.set(prev.id, { ...prev });
+    }
+  });
+
+  // 3. Aplicar actualizaciones entrantes (de Google Apps Script, Supabase o usuario)
+  incomingList.forEach((inc) => {
+    const normName = normalizeName(inc.bankName || inc.bankShort || inc.id);
+    let matchedKey: string | null = null;
+
+    if (masterMap.has(inc.id)) {
+      matchedKey = inc.id;
+    } else if (masterMap.has(normName)) {
+      matchedKey = normName;
+    } else {
+      // Buscar coincidencia parcial (ej. 'bdv' dentro de 'bdv-tu-combox')
+      for (const [k, v] of masterMap.entries()) {
+        if (normalizeName(v.bankName) === normName || normalizeName(v.id) === normName) {
+          matchedKey = k;
+          break;
+        }
+      }
+    }
+
+    if (matchedKey) {
+      const existing = masterMap.get(matchedKey)!;
+      const updated: BankAccount = {
+        ...existing,
+        ...inc,
+        id: existing.id, // Mantener id canónico
+        bankId: existing.bankId || inc.bankId || existing.id,
+        bankName: inc.bankName || existing.bankName,
+        categoria: inc.categoria || existing.categoria,
+        accountNumber: inc.accountNumber || existing.accountNumber,
+        linkActualizar: inc.linkActualizar || existing.linkActualizar,
+      };
+
+      if (inc.balanceNative !== undefined && !isNaN(inc.balanceNative)) {
+        updated.balanceNative = inc.balanceNative;
+      }
+      if (inc.montoUsd !== undefined && !isNaN(inc.montoUsd)) {
+        updated.montoUsd = inc.montoUsd;
+      }
+      if (inc.lastSync) {
+        updated.lastSync = inc.lastSync;
+      }
+
+      masterMap.set(existing.id, updated);
+    } else if (inc.id && inc.bankName) {
+      // Cuenta extra no predeterminada
+      masterMap.set(inc.id, { ...inc });
+    }
+  });
+
+  // 4. Reconstruir lista única respetando el orden de INITIAL_ACCOUNTS primero
+  const result: BankAccount[] = [];
+  const addedIds = new Set<string>();
+
+  INITIAL_ACCOUNTS.forEach((base) => {
+    const item = masterMap.get(base.id);
+    if (item && !addedIds.has(item.id)) {
+      result.push(item);
+      addedIds.add(item.id);
+    }
+  });
+
+  masterMap.forEach((item) => {
+    if (!addedIds.has(item.id)) {
+      result.push(item);
+      addedIds.add(item.id);
+    }
+  });
+
+  return result;
+}
+
 function parseAmount(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
@@ -52,6 +167,19 @@ function setLocalBinanceBalance(totalUsd: number) {
       JSON.stringify({ totalUsd, lastSync: new Date().toISOString() })
     );
   } catch {}
+}
+
+function getLocalCachedAccounts(): BankAccount[] {
+  try {
+    const saved = localStorage.getItem('cached_bank_accounts');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return INITIAL_ACCOUNTS;
 }
 
 /**
@@ -128,9 +256,10 @@ export async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; la
  * Consulta directa a Google Apps Script para cuentas bancarias (para GitHub Pages y fallback)
  */
 export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
+  const cached = getLocalCachedAccounts();
   try {
     const res = await fetch(APPSCRIPT_URL, {
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     });
     if (res.ok) {
       const rawData = await res.json();
@@ -145,7 +274,7 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
           }
           seenIds.add(cleanId);
           const isBinance = rawName.toLowerCase().includes('binance');
-          const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Banco');
+          const rawCategory = item.categoria || item.category || (isBinance ? 'Binance' : 'Bancos');
           const rawUsd = item['monto_$'] ?? item.monto_$ ?? item.monto_usd ?? item.monto_dolar;
 
           return {
@@ -153,57 +282,26 @@ export async function fetchAccountsDirectly(): Promise<BankAccount[]> {
             bankId: cleanId,
             bankName: rawName,
             bankShort: rawName,
-            accountType: isBinance ? 'Spot, Earn & Flexible' : 'Cuenta Bancaria',
+            accountType: isBinance ? 'Spot, Earn & Flexible' : (rawCategory === 'Efectivo' ? 'Efectivo' : 'Cuenta Bancaria'),
             accountNumber: item.cuenta ? String(item.cuenta).trim() : '',
-            categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Banco'),
+            categoria: rawCategory ? String(rawCategory).trim() : (isBinance ? 'Binance' : 'Bancos'),
             nativeCurrency: isBinance ? 'USD' : 'VES',
             balanceNative: parseAmount(item.monto_bs),
-            montoUsd: rawUsd !== undefined ? parseAmount(rawUsd) : undefined,
+            montoUsd: rawUsd !== undefined && rawUsd !== '' ? parseAmount(rawUsd) : undefined,
             lastSync: item.fecha_actualizacion ? String(item.fecha_actualizacion) : '',
             linkActualizar: item.link_actualizar ? String(item.link_actualizar) : '',
           };
         });
 
-        // Asegurar que Binance esté incluido con su balance local/Supabase
-        const binanceData = getLocalBinanceBalance();
-        const bIdx = parsedAccounts.findIndex(
-          (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
-        );
-        if (bIdx === -1) {
-          parsedAccounts.push({
-            id: 'binance',
-            bankId: 'binance',
-            bankName: 'Binance',
-            bankShort: 'BINANCE',
-            accountType: 'ID',
-            accountNumber: '1272204580',
-            categoria: 'Binance',
-            nativeCurrency: 'USD',
-            balanceNative: binanceData.totalUsd,
-            montoUsd: binanceData.totalUsd,
-            lastSync: binanceData.lastSync || '',
-            linkActualizar: '',
-          });
-        } else {
-          if (!parsedAccounts[bIdx].categoria || parsedAccounts[bIdx].categoria === 'Digital') {
-            parsedAccounts[bIdx].categoria = 'Binance';
-          }
-          if (binanceData.totalUsd > 0 && parsedAccounts[bIdx].balanceNative === 0) {
-            parsedAccounts[bIdx].balanceNative = binanceData.totalUsd;
-          }
-          if (binanceData.totalUsd > 0 && (parsedAccounts[bIdx].montoUsd === undefined || parsedAccounts[bIdx].montoUsd === 0)) {
-            parsedAccounts[bIdx].montoUsd = binanceData.totalUsd;
-          }
-        }
-
-        return parsedAccounts;
+        return mergeAccountsWithMaster(parsedAccounts, cached);
       }
     }
   } catch (err) {
     console.warn('Error fetching accounts directly from AppScript:', err);
   }
 
-  return [];
+  // Fallback seguro: Retornar cuentas cacheadas fusionadas con la lista maestra
+  return mergeAccountsWithMaster([], cached);
 }
 
 /**
@@ -224,24 +322,27 @@ export async function fetchBalancesAndRates(forceFresh: boolean = false): Promis
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
-        if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-          const hasSomeBalance = data.accounts.some(
-            (a: BankAccount) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || a.lastSync
-          );
-          if (hasSomeBalance || data.accounts.length > 3) {
-            return data;
-          }
+        if (data && Array.isArray(data.accounts) && data.accounts.length >= 3) {
+          const merged = mergeAccountsWithMaster(data.accounts, getLocalCachedAccounts());
+          return {
+            success: true,
+            accounts: merged,
+            rates: data.rates || INITIAL_RATES,
+          };
         }
       }
     }
   } catch {}
 
   // 2. Modo Estático (GitHub Pages) o Fallback: Consultar Apps Script + Tasas + Supabase Binance en paralelo
-  const [accounts, rates, binanceData] = await Promise.all([
+  const [directAccounts, rates, binanceData] = await Promise.all([
     fetchAccountsDirectly(),
     fetchRatesDirectly(),
     getOrFetchBinanceBalance(),
   ]);
+
+  // Fusionar siempre de manera segura con la plantilla maestra
+  const accounts = mergeAccountsWithMaster(directAccounts, getLocalCachedAccounts());
 
   // Actualizar el saldo y fecha de sincronización de Binance obtenido desde Supabase
   const bIdx = accounts.findIndex(
@@ -255,22 +356,11 @@ export async function fetchBalancesAndRates(forceFresh: boolean = false): Promis
         accounts[bIdx].lastSync = binanceData.lastSync;
       }
     }
-  } else {
-    accounts.push({
-      id: 'binance',
-      bankId: 'binance',
-      bankName: 'Binance',
-      bankShort: 'BINANCE',
-      accountType: 'ID',
-      accountNumber: '1272204580',
-      categoria: 'Binance',
-      nativeCurrency: 'USD',
-      balanceNative: binanceData.totalUsd,
-      montoUsd: binanceData.totalUsd,
-      lastSync: binanceData.lastSync || new Date().toISOString(),
-      linkActualizar: '',
-    });
   }
+
+  try {
+    localStorage.setItem('cached_bank_accounts', JSON.stringify(accounts));
+  } catch {}
 
   return {
     success: true,

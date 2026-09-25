@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BankAccount, ExchangeRates, ForeignCurrency } from './types/dashboard';
 import { INITIAL_ACCOUNTS, INITIAL_RATES } from './constants/initialData';
-import { fetchBalancesAndRates, syncAllAccounts, syncSingleBank, updateBankBalance } from './services/api';
+import {
+  fetchBalancesAndRates,
+  syncAllAccounts,
+  syncSingleBank,
+  updateBankBalance,
+  mergeAccountsWithMaster,
+} from './services/api';
 import { convertValue, isOlderThanMinutes } from './utils/formatters';
 import { SummaryHeader } from './components/SummaryHeader';
 import { BankListItem } from './components/BankListItem';
@@ -40,7 +46,7 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return mergeAccountsWithMaster(parsed);
         }
       }
     } catch {}
@@ -172,27 +178,26 @@ export default function App() {
         }
 
         setAccounts((prevAccounts) => {
-          // Si la respuesta no trajo saldos válidos pero teníamos datos en caché, preservar la caché
-          if (!hasAnyLiveBalance && prevAccounts.some((a) => a.balanceNative > 0)) {
-            return prevAccounts;
-          }
-
+          const merged = mergeAccountsWithMaster(data.accounts, prevAccounts);
           try {
-            localStorage.setItem('cached_bank_accounts', JSON.stringify(data.accounts));
+            localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
           } catch {}
-          return data.accounts;
+          return merged;
         });
 
         // Si la primera carga vino vacía de saldos, reintentar automáticamente tras 1.5 segundos
         if (!hasAnyLiveBalance) {
           setTimeout(() => {
             fetchBalancesAndRates(true).then((retryData) => {
-              if (retryData?.accounts && retryData.accounts.some((a) => a.balanceNative > 0 || a.lastSync)) {
-                setAccounts(retryData.accounts);
+              if (retryData?.accounts && retryData.accounts.length > 0) {
+                setAccounts((prev) => {
+                  const merged = mergeAccountsWithMaster(retryData.accounts, prev);
+                  try {
+                    localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
+                  } catch {}
+                  return merged;
+                });
                 setIsFirstLoading(false);
-                try {
-                  localStorage.setItem('cached_bank_accounts', JSON.stringify(retryData.accounts));
-                } catch {}
               }
             });
           }, 1500);
@@ -315,7 +320,7 @@ export default function App() {
   const categories = React.useMemo(() => {
     const catMap = new Map<string, number>();
     accounts.forEach((acc) => {
-      const cat = (acc.categoria || 'Banco').trim();
+      const cat = (acc.categoria || 'Bancos').trim();
       const normalized = cat.toLowerCase();
       catMap.set(normalized, (catMap.get(normalized) || 0) + 1);
     });
@@ -324,18 +329,31 @@ export default function App() {
       { id: 'todos', label: 'Todos', count: accounts.length },
     ];
 
+    const preferredOrder = ['bancos', 'efectivo', 'binance'];
+    const addedKeys = new Set<string>();
+
+    preferredOrder.forEach((key) => {
+      if (catMap.has(key)) {
+        const count = catMap.get(key) || 0;
+        const label =
+          key === 'bancos'
+            ? 'Bancos'
+            : key === 'efectivo'
+            ? 'Efectivo'
+            : 'Binance';
+        list.push({ id: key, label, count });
+        addedKeys.add(key);
+      }
+    });
+
     catMap.forEach((count, catKey) => {
-      const label =
-        catKey === 'banco'
-          ? 'Bancos'
-          : catKey === 'efectivo'
-          ? 'Efectivo'
-          : catKey === 'binance'
-          ? 'Binance'
-          : catKey === 'digital'
-          ? 'Digital / Cripto'
-          : catKey.charAt(0).toUpperCase() + catKey.slice(1);
-      list.push({ id: catKey, label, count });
+      if (!addedKeys.has(catKey)) {
+        const label =
+          catKey === 'digital'
+            ? 'Digital / Cripto'
+            : catKey.charAt(0).toUpperCase() + catKey.slice(1);
+        list.push({ id: catKey, label, count });
+      }
     });
 
     return list;
@@ -345,7 +363,7 @@ export default function App() {
   const filteredAccounts = React.useMemo(() => {
     if (selectedCategory === 'todos') return accounts;
     return accounts.filter(
-      (a) => (a.categoria || 'banco').trim().toLowerCase() === selectedCategory.toLowerCase()
+      (a) => (a.categoria || 'Bancos').trim().toLowerCase() === selectedCategory.toLowerCase()
     );
   }, [accounts, selectedCategory]);
 
@@ -381,14 +399,14 @@ export default function App() {
     try {
       const updatedAccounts = await syncAllAccounts();
       if (updatedAccounts && updatedAccounts.length > 0) {
-        setAccounts(updatedAccounts);
+        setAccounts((prev) => mergeAccountsWithMaster(updatedAccounts, prev));
       }
       const freshData = await fetchBalancesAndRates();
       if (freshData?.rates) {
         setRates(freshData.rates);
       }
       if (freshData?.accounts && freshData.accounts.length > 0) {
-        setAccounts(freshData.accounts);
+        setAccounts((prev) => mergeAccountsWithMaster(freshData.accounts, prev));
       }
     } catch (err) {
       console.warn('Error during manual refresh:', err);
@@ -408,7 +426,7 @@ export default function App() {
       try {
         const res = await syncSingleBank(bankId);
         if (res.accounts && res.accounts.length > 0) {
-          setAccounts(res.accounts);
+          setAccounts((prev) => mergeAccountsWithMaster(res.accounts, prev));
           const freshBinance = res.accounts.find(
             (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
           );
@@ -452,7 +470,7 @@ export default function App() {
 
       const res = await syncSingleBank(bankId);
       if (res.accounts && res.accounts.length > 0) {
-        setAccounts(res.accounts);
+        setAccounts((prev) => mergeAccountsWithMaster(res.accounts, prev));
       } else if (res.account) {
         setAccounts((prev) =>
           prev.map((a) => (a.id === bankId ? { ...a, ...res.account! } : a))
