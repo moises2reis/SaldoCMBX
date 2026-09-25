@@ -19,14 +19,24 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <!-- Icons for Browsers & iOS Safari -->
-    <link rel="icon" type="image/svg+xml" href="icon.svg" />
-    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="pwa-192x192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="pwa-512x512.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Captura inmediata del evento nativo de instalación en Android / Chromium -->
+    <script>
+      window.__pwaDeferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__pwaDeferredPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa-prompt-captured'));
+      });
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased font-sans selection:bg-emerald-500 selection:text-slate-950">
     <div id="root"></div>

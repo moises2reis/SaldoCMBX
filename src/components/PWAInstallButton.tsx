@@ -27,13 +27,24 @@ export const PWAInstallButton: React.FC = () => {
   };
 
   const handleInstallClick = async () => {
-    // 1. Si el navegador soporta el diálogo nativo directo (Android / Chromium), dispararlo automáticamente
+    // 1. Si el navegador dispone del diálogo nativo directo (Android / Chrome / Edge), dispararlo automáticamente
     if (isInstallable) {
       const success = await install();
       if (success) return;
     }
 
-    // 2. Si no se ha capturado el evento nativo o es iOS/Android sin prompt directo, mostrar la guía adaptada
+    // 2. Intentar recuperar desde window en caso de retraso en el estado
+    if (typeof window !== 'undefined' && window.__pwaDeferredPrompt) {
+      try {
+        await window.__pwaDeferredPrompt.prompt();
+        const choice = await window.__pwaDeferredPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          return;
+        }
+      } catch {}
+    }
+
+    // 3. Si es iOS o navegador sin soporte de prompt nativo, mostrar guía visual adaptada
     setShowGuide(true);
   };
 
@@ -56,7 +67,7 @@ export const PWAInstallButton: React.FC = () => {
             </div>
             <p className="text-[11px] text-slate-400 truncate">
               {isAndroid
-                ? 'Toca para instalar directamente en tu Android'
+                ? 'Instalación automática directa en tu Android'
                 : isIOS
                 ? 'Úsala en iOS sin barra de navegación'
                 : 'Instala la app en tu dispositivo para acceso rápido'}
@@ -85,7 +96,7 @@ export const PWAInstallButton: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal Guía de Instalación según el Sistema Operativo */}
+      {/* Modal Guía de Instalación según el Sistema Operativo (solo si el navegador no admite prompt directo) */}
       {showGuide && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -123,7 +134,7 @@ export const PWAInstallButton: React.FC = () => {
             </div>
 
             {isAndroid ? (
-              /* Instrucciones para Android */
+              /* Instrucciones de respaldo para Android */
               <div className="space-y-3 text-xs text-slate-300">
                 <div className="flex items-start gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80">
                   <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-emerald-400 font-bold font-mono text-[11px]">

@@ -409,6 +409,12 @@ export default function App() {
         const res = await syncSingleBank(bankId);
         if (res.accounts && res.accounts.length > 0) {
           setAccounts(res.accounts);
+          const freshBinance = res.accounts.find(
+            (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
+          );
+          if (freshBinance && editingAccount?.id === 'binance') {
+            setEditingAccount(freshBinance);
+          }
         } else if (res.account) {
           setAccounts((prev) =>
             prev.map((a) =>
@@ -417,6 +423,9 @@ export default function App() {
                 : a
             )
           );
+          if (editingAccount?.id === bankId) {
+            setEditingAccount(res.account);
+          }
         }
         setJustUpdatedBankId(bankId);
         setTimeout(() => setJustUpdatedBankId(null), 2500);

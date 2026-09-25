@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { formatSmartUpdateTime, isOlderThanOneHourAndHalf, formatBs, formatUSD, formatForeign } from '../utils/formatters';
+import { formatSmartUpdateTime, isOlderThanOneHourAndHalf } from '../utils/formatters';
 import {
   X,
   Check,
@@ -95,8 +95,9 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
   // Estados para la pestaña Ingreso / Egreso
   const [movementType, setMovementType] = useState<'ingreso' | 'egreso'>('ingreso');
-  const [movementAmount, setMovementAmount] = useState<string>('');
-  const [movementCurrency, setMovementCurrency] = useState<'USD' | 'VES'>('USD');
+  const [movementAmount, setMovementAmount] = useState<string>(''); // Para cuentas regulares
+  const [movementAmountUsd, setMovementAmountUsd] = useState<string>(''); // Para Efectivo Dólares
+  const [movementAmountBs, setMovementAmountBs] = useState<string>(''); // Para Efectivo Bolívares
 
   useEffect(() => {
     if (account) {
@@ -105,12 +106,13 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
         setMontoBsInput(formatSpanishNumber(account.balanceNative));
         setMontoUsdInput(formatSpanishNumber(account.montoUsd || 0));
         setActiveTab('delta'); // Efectivo por defecto en Ingreso/Egreso
-        setMovementCurrency('USD');
       } else {
         setBalanceInput(formatSpanishNumber(account.balanceNative));
         setActiveTab('macro'); // Bancos por defecto en macro
       }
       setMovementAmount('');
+      setMovementAmountUsd('');
+      setMovementAmountBs('');
       setMovementType('ingreso');
       setMacroTriggered(false);
     }
@@ -177,30 +179,44 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
   // Guardar cálculo de Ingreso / Egreso sumando o restando al monto del servidor
   const handleSubmitDelta = async (e: React.FormEvent) => {
     e.preventDefault();
-    const delta = parseSpanishNumber(movementAmount);
-    if (delta <= 0) return;
-
     setIsSubmitting(true);
+
     try {
       const bankNameToSend = account.bankShort || account.bankId || account.bankName;
 
       if (isEfectivo) {
+        const deltaUsd = parseSpanishNumber(movementAmountUsd);
+        const deltaBs = parseSpanishNumber(movementAmountBs);
+
+        if (deltaUsd <= 0 && deltaBs <= 0) {
+          setIsSubmitting(false);
+          return;
+        }
+
         const currentBs = account.balanceNative || 0;
         const currentUsd = account.montoUsd || 0;
 
-        let finalBs = currentBs;
         let finalUsd = currentUsd;
+        let finalBs = currentBs;
 
-        if (movementCurrency === 'USD') {
+        if (deltaUsd > 0) {
           finalUsd =
-            movementType === 'ingreso' ? currentUsd + delta : Math.max(0, currentUsd - delta);
-        } else {
+            movementType === 'ingreso' ? currentUsd + deltaUsd : Math.max(0, currentUsd - deltaUsd);
+        }
+
+        if (deltaBs > 0) {
           finalBs =
-            movementType === 'ingreso' ? currentBs + delta : Math.max(0, currentBs - delta);
+            movementType === 'ingreso' ? currentBs + deltaBs : Math.max(0, currentBs - deltaBs);
         }
 
         await onSave(bankNameToSend, finalBs, account.id, finalUsd);
       } else {
+        const delta = parseSpanishNumber(movementAmount);
+        if (delta <= 0) {
+          setIsSubmitting(false);
+          return;
+        }
+
         const currentBalance = account.balanceNative || 0;
         const finalBalance =
           movementType === 'ingreso'
@@ -218,30 +234,24 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
     }
   };
 
-  // Cálculo en vivo para la vista previa de Ingreso / Egreso
-  const deltaNum = parseSpanishNumber(movementAmount);
-  let previewCurrent = 0;
-  let previewFinal = 0;
-  let previewUnit = currencyUnit;
+  // Cálculos en vivo para la vista previa de Ingreso / Egreso
+  const deltaUsdNum = parseSpanishNumber(movementAmountUsd);
+  const deltaBsNum = parseSpanishNumber(movementAmountBs);
+  const currentUsdNum = account.montoUsd || 0;
+  const currentBsNum = account.balanceNative || 0;
 
-  if (isEfectivo) {
-    if (movementCurrency === 'USD') {
-      previewCurrent = account.montoUsd || 0;
-      previewUnit = '$ USD';
-      previewFinal =
-        movementType === 'ingreso' ? previewCurrent + deltaNum : Math.max(0, previewCurrent - deltaNum);
-    } else {
-      previewCurrent = account.balanceNative || 0;
-      previewUnit = 'Bs.';
-      previewFinal =
-        movementType === 'ingreso' ? previewCurrent + deltaNum : Math.max(0, previewCurrent - deltaNum);
-    }
-  } else {
-    previewCurrent = account.balanceNative || 0;
-    previewUnit = currencyUnit;
-    previewFinal =
-      movementType === 'ingreso' ? previewCurrent + deltaNum : Math.max(0, previewCurrent - deltaNum);
-  }
+  const finalUsdPreview =
+    movementType === 'ingreso' ? currentUsdNum + deltaUsdNum : Math.max(0, currentUsdNum - deltaUsdNum);
+  const finalBsPreview =
+    movementType === 'ingreso' ? currentBsNum + deltaBsNum : Math.max(0, currentBsNum - deltaBsNum);
+
+  // Para cuentas regulares (no efectivo)
+  const deltaRegularNum = parseSpanishNumber(movementAmount);
+  const currentRegularNum = account.balanceNative || 0;
+  const finalRegularPreview =
+    movementType === 'ingreso'
+      ? currentRegularNum + deltaRegularNum
+      : Math.max(0, currentRegularNum - deltaRegularNum);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -292,8 +302,12 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
             }`}
           >
-            <Zap className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Macro</span>
+            {isBinance ? (
+              <Gem className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            ) : (
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+            )}
+            <span className="truncate">{isBinance ? 'API Binance' : 'Macro'}</span>
           </button>
           <button
             type="button"
@@ -321,31 +335,41 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
           </button>
         </div>
 
-        {/* CONTENIDO PESTAÑA: ACTUALIZAR CON MACRO */}
+        {/* CONTENIDO PESTAÑA: ACTUALIZAR CON MACRO / API BINANCE */}
         {activeTab === 'macro' && (
           <div className="space-y-4 py-1">
             <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 text-center space-y-2">
               <div
                 className={`w-11 h-11 mx-auto rounded-full flex items-center justify-center border transition-colors ${
-                  isOutdated
+                  isBinance
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+                    : isOutdated
                     ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
                     : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
                 }`}
               >
-                <Zap className="w-5 h-5" />
+                {isBinance ? <Gem className="w-5 h-5 text-amber-400" /> : <Zap className="w-5 h-5" />}
               </div>
 
               <div>
-                <h4 className="text-sm font-semibold text-white">Actualización Automática</h4>
-                {timeAgoText && (
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mt-1 rounded-full text-[11px] font-mono font-medium border transition-colors">
-                    <Clock
-                      className={`w-3 h-3 ${isOutdated ? 'text-amber-400' : 'text-emerald-400'}`}
-                    />
-                    <span className={isOutdated ? 'text-amber-300' : 'text-emerald-300'}>
-                      {isOutdated ? `Desactualizado: hace ${timeAgoText}` : `Al día: hace ${timeAgoText}`}
-                    </span>
-                  </div>
+                <h4 className="text-sm font-semibold text-white">
+                  {isBinance ? 'Sincronización con API Binance' : 'Actualización Automática'}
+                </h4>
+                {isBinance ? (
+                  <p className="text-[11px] text-slate-400 mt-1 font-mono">
+                    Consulta en vivo Spot + Funding + Simple Earn Flexible
+                  </p>
+                ) : (
+                  timeAgoText && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mt-1 rounded-full text-[11px] font-mono font-medium border transition-colors">
+                      <Clock
+                        className={`w-3 h-3 ${isOutdated ? 'text-amber-400' : 'text-emerald-400'}`}
+                      />
+                      <span className={isOutdated ? 'text-amber-300' : 'text-emerald-300'}>
+                        {isOutdated ? `Desactualizado: hace ${timeAgoText}` : `Al día: hace ${timeAgoText}`}
+                      </span>
+                    </div>
+                  )
                 )}
               </div>
             </div>
@@ -361,6 +385,8 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
                   ? 'bg-amber-600/30 text-amber-300 border border-amber-500/40 cursor-wait'
                   : isBlocked
                   ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : isBinance
+                  ? 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold border border-amber-400 shadow-amber-950/60'
                   : isOutdated
                   ? 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold border border-amber-400 shadow-amber-950/60'
                   : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold border border-emerald-500/60 shadow-emerald-950/60'
@@ -369,19 +395,33 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
               {macroTriggered ? (
                 <>
                   <Check className="w-4 h-4 text-white animate-bounce" />
-                  <span>¡Macro solicitada con éxito!</span>
+                  <span>
+                    {isBinance
+                      ? '¡Saldo consultado desde Binance API!'
+                      : '¡Macro solicitada con éxito!'}
+                  </span>
                 </>
               ) : isSyncingMacro ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
-                  <span>Sincronizando ({protectionSeconds}s)...</span>
+                  <span>
+                    {isBinance
+                      ? 'Consultando API de Binance...'
+                      : `Sincronizando (${protectionSeconds}s)...`}
+                  </span>
                 </>
               ) : isBlocked ? (
                 <span>Espera {protectionSeconds}s para otra macro</span>
               ) : (
                 <>
-                  <Zap className={`w-4 h-4 ${isOutdated ? 'text-slate-950' : 'text-white'}`} />
-                  <span>Actualizar con Macro</span>
+                  {isBinance ? (
+                    <Gem className="w-4 h-4 text-slate-950" />
+                  ) : (
+                    <Zap className={`w-4 h-4 ${isOutdated ? 'text-slate-950' : 'text-white'}`} />
+                  )}
+                  <span>
+                    {isBinance ? 'Actualizar con API Binance' : 'Actualizar con Macro'}
+                  </span>
                 </>
               )}
             </button>
@@ -529,103 +569,187 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
               </div>
             </div>
 
-            {/* Selector de moneda (solo para Efectivo que maneja USD y Bs) */}
-            {isEfectivo && (
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Moneda a modificar:
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMovementCurrency('USD')}
-                    className={`py-1.5 px-3 rounded-xl text-xs font-semibold font-mono border transition-all ${
-                      movementCurrency === 'USD'
-                        ? 'bg-slate-800 text-emerald-400 border-emerald-500/60 shadow-sm'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    $ USD ({formatSpanishNumber(account.montoUsd || 0)})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMovementCurrency('VES')}
-                    className={`py-1.5 px-3 rounded-xl text-xs font-semibold font-mono border transition-all ${
-                      movementCurrency === 'VES'
-                        ? 'bg-slate-800 text-emerald-400 border-emerald-500/60 shadow-sm'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    Bs. ({formatSpanishNumber(account.balanceNative || 0)})
-                  </button>
+            {isEfectivo ? (
+              /* Caso BOLSO / BÓVEDA: 2 inputs simultáneos (Dólares y Bolívares) */
+              <div className="space-y-3">
+                {/* Input Dólares ($) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-300">
+                      Monto en Dólares ($):
+                    </label>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Servidor: ${formatSpanishNumber(currentUsdNum)}
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={movementAmountUsd}
+                      onChange={(e) => handleGenericChange(e, setMovementAmountUsd)}
+                      autoFocus
+                      disabled={isSubmitting}
+                      placeholder="0,00"
+                      className={`w-full bg-slate-950 border rounded-2xl px-3.5 py-2.5 text-lg font-mono font-bold focus:outline-none transition-all placeholder:text-slate-600 ${
+                        movementType === 'ingreso'
+                          ? 'border-slate-800 text-emerald-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                          : 'border-slate-800 text-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                      }`}
+                    />
+                    <span
+                      className={`absolute right-3.5 top-3 text-xs font-mono font-bold ${
+                        movementType === 'ingreso' ? 'text-emerald-400/90' : 'text-rose-400/90'
+                      }`}
+                    >
+                      $ USD
+                    </span>
+                  </div>
+                </div>
+
+                {/* Input Bolívares (Bs.) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-300">
+                      Monto en Bolívares (Bs.):
+                    </label>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Servidor: Bs. {formatSpanishNumber(currentBsNum)}
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={movementAmountBs}
+                      onChange={(e) => handleGenericChange(e, setMovementAmountBs)}
+                      disabled={isSubmitting}
+                      placeholder="0,00"
+                      className={`w-full bg-slate-950 border rounded-2xl px-3.5 py-2.5 text-lg font-mono font-bold focus:outline-none transition-all placeholder:text-slate-600 ${
+                        movementType === 'ingreso'
+                          ? 'border-slate-800 text-emerald-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                          : 'border-slate-800 text-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                      }`}
+                    />
+                    <span
+                      className={`absolute right-3.5 top-3 text-xs font-mono font-bold ${
+                        movementType === 'ingreso' ? 'text-emerald-400/90' : 'text-rose-400/90'
+                      }`}
+                    >
+                      Bs.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tarjeta de cálculo y vista previa en tiempo real para Efectivo */}
+                <div className="bg-slate-950/90 border border-slate-800/90 rounded-2xl p-3 space-y-2 text-xs font-mono">
+                  {/* Vista USD */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Dólares ($):</span>
+                    <div className="flex items-center gap-1.5">
+                      {deltaUsdNum > 0 && (
+                        <span
+                          className={`font-semibold ${
+                            movementType === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {movementType === 'ingreso' ? '+' : '-'}${formatSpanishNumber(deltaUsdNum)} ➔
+                        </span>
+                      )}
+                      <span className="font-bold text-white tabular-nums">
+                        ${formatSpanishNumber(finalUsdPreview)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vista Bolívares */}
+                  <div className="flex items-center justify-between border-t border-slate-800/80 pt-1.5">
+                    <span className="text-slate-400">Bolívares (Bs.):</span>
+                    <div className="flex items-center gap-1.5">
+                      {deltaBsNum > 0 && (
+                        <span
+                          className={`font-semibold ${
+                            movementType === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {movementType === 'ingreso' ? '+' : '-'}Bs. {formatSpanishNumber(deltaBsNum)} ➔
+                        </span>
+                      )}
+                      <span className="font-bold text-white tabular-nums">
+                        Bs. {formatSpanishNumber(finalBsPreview)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Caso Cuentas Bancarias Regulares / Binance (1 sola moneda) */
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Monto a {movementType === 'ingreso' ? 'sumar' : 'restar'}:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={movementAmount}
+                      onChange={(e) => handleGenericChange(e, setMovementAmount)}
+                      autoFocus
+                      disabled={isSubmitting}
+                      placeholder="0,00"
+                      className={`w-full bg-slate-950 border rounded-2xl px-3.5 py-3 text-xl font-mono font-bold focus:outline-none transition-all placeholder:text-slate-600 ${
+                        movementType === 'ingreso'
+                          ? 'border-slate-800 text-emerald-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                          : 'border-slate-800 text-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                      }`}
+                    />
+                    <span
+                      className={`absolute right-3.5 top-3.5 text-xs font-mono font-bold ${
+                        movementType === 'ingreso' ? 'text-emerald-400/90' : 'text-rose-400/90'
+                      }`}
+                    >
+                      {currencyUnit}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tarjeta de cálculo y vista previa en tiempo real para Bancos */}
+                <div className="bg-slate-950/90 border border-slate-800/90 rounded-2xl p-3.5 space-y-2 text-xs font-mono">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Saldo en servidor:</span>
+                    <span className="font-semibold text-slate-300 tabular-nums">
+                      {formatSpanishNumber(currentRegularNum)} {currencyUnit}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">
+                      {movementType === 'ingreso' ? 'Ingreso (+):' : 'Egreso (-):'}
+                    </span>
+                    <span
+                      className={`font-bold tabular-nums flex items-center gap-1 ${
+                        movementType === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'
+                      }`}
+                    >
+                      {movementType === 'ingreso' ? '+' : '-'} {formatSpanishNumber(deltaRegularNum)}{' '}
+                      {currencyUnit}
+                    </span>
+                  </div>
+
+                  <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
+                    <span className="font-bold text-white">Nuevo saldo resultante:</span>
+                    <span
+                      className={`font-extrabold text-sm sm:text-base tabular-nums ${
+                        movementType === 'ingreso' ? 'text-emerald-400' : 'text-white'
+                      }`}
+                    >
+                      {formatSpanishNumber(finalRegularPreview)} {currencyUnit}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
-
-            {/* Input del Monto a Sumar o Restar */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Monto a {movementType === 'ingreso' ? 'sumar' : 'restar'}:
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={movementAmount}
-                  onChange={(e) => handleGenericChange(e, setMovementAmount)}
-                  autoFocus
-                  disabled={isSubmitting}
-                  placeholder="0,00"
-                  className={`w-full bg-slate-950 border rounded-2xl px-3.5 py-3 text-xl font-mono font-bold focus:outline-none transition-all placeholder:text-slate-600 ${
-                    movementType === 'ingreso'
-                      ? 'border-slate-800 text-emerald-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
-                      : 'border-slate-800 text-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
-                  }`}
-                />
-                <span
-                  className={`absolute right-3.5 top-3.5 text-xs font-mono font-bold ${
-                    movementType === 'ingreso' ? 'text-emerald-400/90' : 'text-rose-400/90'
-                  }`}
-                >
-                  {previewUnit}
-                </span>
-              </div>
-            </div>
-
-            {/* Tarjeta de cálculo y vista previa en tiempo real */}
-            <div className="bg-slate-950/90 border border-slate-800/90 rounded-2xl p-3.5 space-y-2 text-xs font-mono">
-              <div className="flex items-center justify-between text-slate-400">
-                <span>Saldo en servidor:</span>
-                <span className="font-semibold text-slate-300 tabular-nums">
-                  {formatSpanishNumber(previewCurrent)} {previewUnit}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">
-                  {movementType === 'ingreso' ? 'Ingreso (+):' : 'Egreso (-):'}
-                </span>
-                <span
-                  className={`font-bold tabular-nums flex items-center gap-1 ${
-                    movementType === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'
-                  }`}
-                >
-                  {movementType === 'ingreso' ? '+' : '-'} {formatSpanishNumber(deltaNum)}{' '}
-                  {previewUnit}
-                </span>
-              </div>
-
-              <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
-                <span className="font-bold text-white">Nuevo saldo resultante:</span>
-                <span
-                  className={`font-extrabold text-sm sm:text-base tabular-nums ${
-                    movementType === 'ingreso' ? 'text-emerald-400' : 'text-white'
-                  }`}
-                >
-                  {formatSpanishNumber(previewFinal)} {previewUnit}
-                </span>
-              </div>
-            </div>
 
             {/* Botones de acción Ingreso / Egreso */}
             <div className="flex gap-2.5 justify-end pt-1">
@@ -639,7 +763,12 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || deltaNum <= 0}
+                disabled={
+                  isSubmitting ||
+                  (isEfectivo
+                    ? deltaUsdNum <= 0 && deltaBsNum <= 0
+                    : deltaRegularNum <= 0)
+                }
                 className={`px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50 disabled:pointer-events-none rounded-xl flex items-center gap-2 transition-all shadow-lg ${
                   movementType === 'ingreso'
                     ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
