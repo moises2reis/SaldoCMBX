@@ -14,6 +14,7 @@ interface BankListItemProps {
   isLoadingInitial?: boolean;
   protectionSeconds?: number;
   justUpdated?: boolean;
+  delta?: { diff: number; key: number } | null;
   onSync?: (bankId: string) => void;
   onEditBalance?: (account: BankAccount) => void;
 }
@@ -27,14 +28,10 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   isLoadingInitial = false,
   protectionSeconds = 0,
   justUpdated = false,
+  delta = null,
   onEditBalance,
 }) => {
   const [, setTick] = useState(0);
-  const [delta, setDelta] = useState<{ diff: number; key: number } | null>(null);
-  const prevBalanceNativeRef = React.useRef<number | null>(null);
-  const prevMontoUsdRef = React.useRef<number | null>(null);
-  const prevAmountUsdRef = React.useRef<number | null>(null);
-  const isInitialisedRef = React.useRef(false);
 
   // Recalcular el tiempo transcurrido cada 15 segundos
   useEffect(() => {
@@ -71,61 +68,6 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   } else {
     amountUsd = activeRate > 0 ? amountBs / activeRate : 0;
   }
-
-  // Detectar cambios en el saldo en tiempo real para disparar la superposición animada de diferencia (+/-) por 10 segundos
-  // Evita falsos positivos: sólo se dispara si el saldo real nativo o en USD de la cuenta cambió y no en la carga inicial
-  useEffect(() => {
-    if (isLoadingInitial) {
-      prevBalanceNativeRef.current = account.balanceNative;
-      prevMontoUsdRef.current = account.montoUsd || 0;
-      prevAmountUsdRef.current = amountUsd;
-      return;
-    }
-
-    if (!isInitialisedRef.current) {
-      isInitialisedRef.current = true;
-      prevBalanceNativeRef.current = account.balanceNative;
-      prevMontoUsdRef.current = account.montoUsd || 0;
-      prevAmountUsdRef.current = amountUsd;
-      return;
-    }
-
-    const prevNative = prevBalanceNativeRef.current;
-    const prevUsd = prevMontoUsdRef.current;
-    const prevTotalUsd = prevAmountUsdRef.current;
-
-    const currentNative = account.balanceNative || 0;
-    const currentUsd = account.montoUsd || 0;
-
-    // Verificar si el saldo nativo o USD de la cuenta cambió realmente
-    const nativeChanged =
-      prevNative !== null && Math.abs(currentNative - prevNative) >= 0.005;
-    const usdChanged =
-      prevUsd !== null && Math.abs(currentUsd - prevUsd) >= 0.005;
-
-    if (nativeChanged || usdChanged) {
-      if (prevTotalUsd !== null) {
-        const diff = amountUsd - prevTotalUsd;
-        if (Math.abs(diff) >= 0.005) {
-          setDelta({ diff, key: Date.now() });
-
-          // Desaparecer la animación a los 10 segundos
-          const timer = setTimeout(() => {
-            setDelta(null);
-          }, 10000);
-
-          prevBalanceNativeRef.current = currentNative;
-          prevMontoUsdRef.current = currentUsd;
-          prevAmountUsdRef.current = amountUsd;
-          return () => clearTimeout(timer);
-        }
-      }
-    }
-
-    prevBalanceNativeRef.current = currentNative;
-    prevMontoUsdRef.current = currentUsd;
-    prevAmountUsdRef.current = amountUsd;
-  }, [account.balanceNative, account.montoUsd, amountUsd, isLoadingInitial]);
 
   // Subtítulo: para Binance mostrar específicamente 1272204580, para efectivo mostrar indicador
   const displaySubtitle = isBinance

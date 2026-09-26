@@ -1,5 +1,6 @@
 import { BankAccount, ExchangeRates } from '../types/dashboard';
 import { INITIAL_ACCOUNTS, INITIAL_RATES } from '../constants/initialData';
+import { parseFlexibleDate } from '../utils/formatters';
 import { callSupabase } from './supabase';
 
 export { callSupabase };
@@ -17,89 +18,127 @@ function normalizeName(name: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
+function getTimestampMs(dateVal?: unknown): number {
+  if (!dateVal) return 0;
+  const d = parseFlexibleDate(dateVal);
+  return d ? d.getTime() : 0;
+}
+
 /**
  * Fusiona de forma segura cualquier lista de cuentas con la lista maestra base (INITIAL_ACCOUNTS).
- * Garantiza que NUNCA desaparezcan los bancos tradicionales ni el efectivo aunque la API falle.
+ * Garantiza que NUNCA desaparezcan los bancos tradicionales ni el efectivo, y PREVIENE
+ * que saldos recientes o recién guardados se sobrescriban con datos desactualizados de la nube.
  */
 export function mergeAccountsWithMaster(
   incomingList: BankAccount[] = [],
   previousList: BankAccount[] = []
 ): BankAccount[] {
-  // Mapa de todas las cuentas maestras por id normalizado
   const masterMap = new Map<string, BankAccount>();
 
-  // 1. Inicializar con la plantilla maestra
+  // 1. Inicializar con la plantilla maestra (claves canónicas)
   INITIAL_ACCOUNTS.forEach((acc) => {
     masterMap.set(acc.id, { ...acc });
-    masterMap.set(normalizeName(acc.bankName), { ...acc });
   });
 
-  // 2. Incorporar datos previos si existen
-  previousList.forEach((prev) => {
-    const key = masterMap.has(prev.id)
-      ? prev.id
-      : masterMap.has(normalizeName(prev.bankName))
-      ? normalizeName(prev.bankName)
-      : null;
+  const findMatchingKey = (item: Partial<BankAccount>): string | null => {
+    if (item.id && masterMap.has(item.id)) return item.id;
+    if (item.bankId && masterMap.has(item.bankId)) return item.bankId;
 
+    const normName = normalizeName(item.bankName || item.bankShort || item.id || '');
+    if (!normName) return null;
+
+    for (const [k, v] of masterMap.entries()) {
+      if (
+        k === normName ||
+        normalizeName(v.bankName) === normName ||
+        normalizeName(v.bankShort) === normName ||
+        normalizeName(v.id) === normName
+      ) {
+        return k;
+      }
+    }
+
+    for (const [k, v] of masterMap.entries()) {
+      const vNorm = normalizeName(v.bankName || v.id);
+      if (normName.length >= 3 && (vNorm.includes(normName) || normName.includes(vNorm))) {
+        return k;
+      }
+    }
+
+    return null;
+  };
+
+  // 2. Incorporar datos previos (del estado actual o caché local del usuario)
+  previousList.forEach((prev) => {
+    const key = findMatchingKey(prev);
     if (key) {
       const existing = masterMap.get(key)!;
-      masterMap.set(existing.id, {
+      masterMap.set(key, {
         ...existing,
         ...prev,
-        // Proteger categoría original
+        id: existing.id,
+        bankId: existing.bankId || prev.bankId || existing.id,
         categoria: prev.categoria || existing.categoria,
       });
-    } else {
+    } else if (prev.id && prev.bankName) {
       masterMap.set(prev.id, { ...prev });
     }
   });
 
-  // 3. Aplicar actualizaciones entrantes (de Google Apps Script, Supabase o usuario)
+  // 3. Aplicar actualizaciones entrantes con validación estricta de marcas de tiempo
   incomingList.forEach((inc) => {
-    const normName = normalizeName(inc.bankName || inc.bankShort || inc.id);
-    let matchedKey: string | null = null;
+    const key = findMatchingKey(inc);
 
-    if (masterMap.has(inc.id)) {
-      matchedKey = inc.id;
-    } else if (masterMap.has(normName)) {
-      matchedKey = normName;
-    } else {
-      // Buscar coincidencia parcial (ej. 'bdv' dentro de 'bdv-tu-combox')
-      for (const [k, v] of masterMap.entries()) {
-        if (normalizeName(v.bankName) === normName || normalizeName(v.id) === normName) {
-          matchedKey = k;
-          break;
-        }
-      }
-    }
+    if (key) {
+      const existing = masterMap.get(key)!;
+      const existingTime = getTimestampMs(existing.lastSync);
+      const incomingTime = getTimestampMs(inc.lastSync);
 
-    if (matchedKey) {
-      const existing = masterMap.get(matchedKey)!;
+      // Si el estado previo local tiene una fecha MÁS RECIENTE que la entrante,
+      // no degradar el saldo al valor antiguo que devolvió Google Apps Script
+      const existingIsNewer =
+        existingTime > 0 && incomingTime > 0 && existingTime > incomingTime;
+
+      // Si la cuenta local se actualizó hace menos de 90 segundos y el incoming no trae fecha nueva
+      const existingIsFreshLocalEdit =
+        existingTime > 0 && Date.now() - existingTime < 90000 && incomingTime <= existingTime;
+
+      const shouldPreserveExistingBalance = existingIsNewer || existingIsFreshLocalEdit;
+
       const updated: BankAccount = {
         ...existing,
         ...inc,
-        id: existing.id, // Mantener id canónico
+        id: existing.id,
         bankId: existing.bankId || inc.bankId || existing.id,
-        bankName: inc.bankName || existing.bankName,
+        bankName: existing.bankName || inc.bankName,
         categoria: inc.categoria || existing.categoria,
         accountNumber: inc.accountNumber || existing.accountNumber,
         linkActualizar: inc.linkActualizar || existing.linkActualizar,
       };
 
-      if (inc.balanceNative !== undefined && !isNaN(inc.balanceNative)) {
-        updated.balanceNative = inc.balanceNative;
-      }
-      if (inc.montoUsd !== undefined && !isNaN(inc.montoUsd)) {
-        updated.montoUsd = inc.montoUsd;
-      }
-      if (inc.lastSync) {
-        updated.lastSync = inc.lastSync;
+      if (shouldPreserveExistingBalance) {
+        updated.balanceNative = existing.balanceNative;
+        updated.montoUsd = existing.montoUsd;
+        updated.lastSync = existing.lastSync;
+      } else {
+        if (inc.balanceNative !== undefined && !isNaN(inc.balanceNative)) {
+          // No permitir que un 0 sin fecha destruya un saldo positivo previo con fecha
+          if (inc.balanceNative === 0 && existing.balanceNative > 0 && !inc.lastSync) {
+            updated.balanceNative = existing.balanceNative;
+          } else {
+            updated.balanceNative = inc.balanceNative;
+          }
+        }
+        if (inc.montoUsd !== undefined && !isNaN(inc.montoUsd)) {
+          updated.montoUsd = inc.montoUsd;
+        }
+        if (inc.lastSync) {
+          updated.lastSync = inc.lastSync;
+        }
       }
 
-      masterMap.set(existing.id, updated);
+      masterMap.set(key, updated);
     } else if (inc.id && inc.bankName) {
-      // Cuenta extra no predeterminada
       masterMap.set(inc.id, { ...inc });
     }
   });

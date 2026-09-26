@@ -122,6 +122,31 @@ export function convertValue(
   return amount;
 }
 
+export function calculateAccountUsd(
+  account: {
+    categoria?: string;
+    balanceNative?: number;
+    montoUsd?: number;
+    nativeCurrency?: CurrencyType;
+  },
+  activeRate: number
+): number {
+  const isEfectivo = account.categoria?.trim().toLowerCase() === 'efectivo';
+  const cashUsd = account.montoUsd || 0;
+  const cashBs = account.balanceNative || 0;
+
+  if (isEfectivo) {
+    return cashUsd + (activeRate > 0 ? cashBs / activeRate : 0);
+  } else if (account.nativeCurrency === 'USD') {
+    return account.balanceNative || 0;
+  } else if (account.nativeCurrency === 'EUR') {
+    const amountBs = convertValue(account.balanceNative || 0, 'EUR', 'VES', activeRate);
+    return activeRate > 0 ? amountBs / activeRate : 0;
+  } else {
+    return activeRate > 0 ? (account.balanceNative || 0) / activeRate : 0;
+  }
+}
+
 export function parseAmount(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;

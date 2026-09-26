@@ -266,6 +266,91 @@ async function startServer() {
     return cachedRates;
   }
 
+  function normalizeServerName(name: string): string {
+    return (name || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  function parseDateTimestamp(val: unknown): number {
+    if (!val) return 0;
+    const str = String(val).trim();
+    if (!str) return 0;
+    const direct = new Date(str);
+    if (!isNaN(direct.getTime())) return direct.getTime();
+
+    const dmyMatch = str.match(
+      /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s*[, ]\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)?/i
+    );
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      let hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+      const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+      const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+      const ampm = dmyMatch[7] ? dmyMatch[7].toLowerCase().replace(/\s|\./g, '') : '';
+
+      if (ampm === 'pm' && hour < 12) hour += 12;
+      else if (ampm === 'am' && hour === 12) hour = 0;
+
+      const customDate = new Date(year, month, day, hour, min, sec);
+      if (!isNaN(customDate.getTime())) return customDate.getTime();
+    }
+    return 0;
+  }
+
+  function mergeServerAccounts(incoming: BankAccount[], current: BankAccount[]): BankAccount[] {
+    const map = new Map<string, BankAccount>();
+    current.forEach((acc) => map.set(acc.id, { ...acc }));
+
+    incoming.forEach((inc) => {
+      let matchedKey: string | null = null;
+      if (map.has(inc.id)) {
+        matchedKey = inc.id;
+      } else {
+        const incNorm = normalizeServerName(inc.bankName || inc.id);
+        for (const [k, v] of map.entries()) {
+          if (k === incNorm || normalizeServerName(v.bankName) === incNorm) {
+            matchedKey = k;
+            break;
+          }
+        }
+      }
+
+      if (matchedKey) {
+        const existing = map.get(matchedKey)!;
+        const existingTime = parseDateTimestamp(existing.lastSync);
+        const incomingTime = parseDateTimestamp(inc.lastSync);
+
+        const existingIsNewer = existingTime > 0 && incomingTime > 0 && existingTime > incomingTime;
+        const existingIsFreshEdit = existingTime > 0 && Date.now() - existingTime < 90000 && incomingTime <= existingTime;
+
+        if (existingIsNewer || existingIsFreshEdit) {
+          // Mantener saldo recién actualizado
+          map.set(matchedKey, {
+            ...existing,
+            ...inc,
+            id: existing.id,
+            balanceNative: existing.balanceNative,
+            montoUsd: existing.montoUsd,
+            lastSync: existing.lastSync,
+          });
+        } else {
+          map.set(matchedKey, {
+            ...existing,
+            ...inc,
+            id: existing.id,
+          });
+        }
+      } else {
+        map.set(inc.id, { ...inc });
+      }
+    });
+
+    return Array.from(map.values());
+  }
+
   // Función para obtener los datos de bancos desde Google Apps Script
   async function fetchAccountsFromAppScript(forceFresh = false): Promise<BankAccount[]> {
     try {
@@ -317,7 +402,7 @@ async function startServer() {
           });
 
           if (parsedAccounts.length > 0) {
-            cachedAccounts = parsedAccounts;
+            cachedAccounts = mergeServerAccounts(parsedAccounts, cachedAccounts);
             lastFetchTimestamp = Date.now();
             saveCachedAccounts(cachedAccounts);
           }

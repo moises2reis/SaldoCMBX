@@ -9,7 +9,7 @@ import {
   mergeAccountsWithMaster,
   clearBankCache,
 } from './services/api';
-import { convertValue, isOlderThanMinutes } from './utils/formatters';
+import { convertValue, isOlderThanMinutes, calculateAccountUsd } from './utils/formatters';
 import { SummaryHeader } from './components/SummaryHeader';
 import { BankListItem } from './components/BankListItem';
 import { EditBankBalanceModal } from './components/EditBankBalanceModal';
@@ -53,6 +53,40 @@ export default function App() {
     } catch {}
     return INITIAL_ACCOUNTS;
   });
+
+  // Tasa activa según la moneda seleccionada (USD, EUR o P2P)
+  const bcvUsdRate = rates.bcvUsd || rates.bcv || 853.50;
+  const bcvEurRate = rates.bcvEur || 976.55;
+  const binanceP2pRate = rates.binanceP2p && rates.binanceP2p > 0 ? rates.binanceP2p : 964.80;
+
+  const activeRate =
+    foreignCurrency === 'USD'
+      ? bcvUsdRate
+      : foreignCurrency === 'EUR'
+      ? bcvEurRate
+      : binanceP2pRate;
+
+  // Estado para los badges de diferencia en saldo (+/-) activados solo por macro o manual
+  const [cardDeltas, setCardDeltas] = useState<Record<string, { diff: number; key: number }>>({});
+  const preSyncUsdRef = React.useRef<Record<string, number>>({});
+  const activeRateRef = React.useRef(activeRate);
+  activeRateRef.current = activeRate;
+
+  const triggerCardDelta = useCallback((bankId: string, diff: number) => {
+    if (Math.abs(diff) < 0.005) return;
+    const key = Date.now();
+    setCardDeltas((prev) => ({
+      ...prev,
+      [bankId]: { diff, key },
+    }));
+    setTimeout(() => {
+      setCardDeltas((prev) => {
+        const next = { ...prev };
+        delete next[bankId];
+        return next;
+      });
+    }, 10000);
+  }, []);
 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isFirstLoading, setIsFirstLoading] = useState<boolean>(() => {
@@ -271,6 +305,15 @@ export default function App() {
                 setJustUpdatedBankId(currentBank);
                 setTimeout(() => setJustUpdatedBankId(null), 3000);
                 setMonitoredBankId(null);
+
+                const oldUsd = preSyncUsdRef.current[currentBank];
+                if (oldUsd !== undefined) {
+                  const newUsd = calculateAccountUsd(updated, activeRateRef.current);
+                  if (Math.abs(newUsd - oldUsd) >= 0.005) {
+                    triggerCardDelta(currentBank, newUsd - oldUsd);
+                  }
+                  delete preSyncUsdRef.current[currentBank];
+                }
               } else if (currentBank) {
                 // Si la fecha aún supera los 2 minutos, activar reintentos inteligentes
                 setMonitoredBankId(currentBank);
@@ -304,6 +347,16 @@ export default function App() {
           // ¡Actualización fresca detectada desde Google Sheet / Apps Script!
           setJustUpdatedBankId(monitoredBankId);
           setTimeout(() => setJustUpdatedBankId(null), 3000);
+
+          const oldUsd = preSyncUsdRef.current[monitoredBankId];
+          if (oldUsd !== undefined) {
+            const newUsd = calculateAccountUsd(acc, activeRateRef.current);
+            if (Math.abs(newUsd - oldUsd) >= 0.005) {
+              triggerCardDelta(monitoredBankId, newUsd - oldUsd);
+            }
+            delete preSyncUsdRef.current[monitoredBankId];
+          }
+
           setMonitoredBankId(null);
           clearInterval(interval);
           return;
@@ -318,18 +371,6 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [monitoredBankId, loadData]);
-
-  // Tasa activa según la moneda seleccionada (USD, EUR o P2P)
-  const bcvUsdRate = rates.bcvUsd || rates.bcv || 853.50;
-  const bcvEurRate = rates.bcvEur || 976.55;
-  const binanceP2pRate = rates.binanceP2p && rates.binanceP2p > 0 ? rates.binanceP2p : 964.80;
-
-  const activeRate =
-    foreignCurrency === 'USD'
-      ? bcvUsdRate
-      : foreignCurrency === 'EUR'
-      ? bcvEurRate
-      : binanceP2pRate;
 
   // Extraer categorías dinámicas con conteo de bancos (con 'Todos' al final a la derecha)
   const categories = React.useMemo(() => {
@@ -469,32 +510,64 @@ export default function App() {
     const isBinance =
       bankId === 'binance' || bankId.toLowerCase().includes('binance');
 
+    // Registrar saldo previo para calcular badge de cambio por macro
+    const targetAccount = accounts.find(
+      (a) => a.id === bankId || (isBinance && (a.id === 'binance' || a.bankName.toLowerCase().includes('binance')))
+    );
+    if (targetAccount) {
+      preSyncUsdRef.current[bankId] = calculateAccountUsd(targetAccount, activeRateRef.current);
+    }
+
     // 1. Si es Binance, sincronizar inmediatamente vía API / Edge Function sin temporizador de 30s
     if (isBinance) {
       if (binanceSyncing) return;
       setBinanceSyncing(true);
       try {
         const res = await syncSingleBank(bankId);
+        let freshBinance: BankAccount | undefined;
         if (res.accounts && res.accounts.length > 0) {
-          setAccounts((prev) => mergeAccountsWithMaster(res.accounts, prev));
-          const freshBinance = res.accounts.find(
+          setAccounts((prev) => {
+            const merged = mergeAccountsWithMaster(res.accounts, prev);
+            try {
+              localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+          freshBinance = res.accounts.find(
             (a) => a.id === 'binance' || a.bankName.toLowerCase().includes('binance')
           );
           if (freshBinance && editingAccount?.id === 'binance') {
             setEditingAccount(freshBinance);
           }
         } else if (res.account) {
-          setAccounts((prev) =>
-            prev.map((a) =>
+          freshBinance = res.account;
+          setAccounts((prev) => {
+            const next = prev.map((a) =>
               a.id === bankId || a.bankName.toLowerCase().includes('binance')
                 ? { ...a, ...res.account! }
                 : a
-            )
-          );
+            );
+            try {
+              localStorage.setItem('cached_bank_accounts', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
           if (editingAccount?.id === bankId) {
             setEditingAccount(res.account);
           }
         }
+
+        if (freshBinance) {
+          const oldUsd = preSyncUsdRef.current[bankId];
+          if (oldUsd !== undefined) {
+            const newUsd = calculateAccountUsd(freshBinance, activeRateRef.current);
+            if (Math.abs(newUsd - oldUsd) >= 0.005) {
+              triggerCardDelta(bankId, newUsd - oldUsd);
+            }
+            delete preSyncUsdRef.current[bankId];
+          }
+        }
+
         setJustUpdatedBankId(bankId);
         setTimeout(() => setJustUpdatedBankId(null), 2500);
       } catch (err) {
@@ -513,18 +586,41 @@ export default function App() {
 
     try {
       // Disparar MacroDroid si existe link para este banco
-      const targetAccount = accounts.find((a) => a.id === bankId);
       if (targetAccount?.linkActualizar) {
         fetch(targetAccount.linkActualizar, { method: 'GET', mode: 'no-cors' }).catch(() => {});
       }
 
       const res = await syncSingleBank(bankId);
+      let updatedAcc: BankAccount | undefined;
       if (res.accounts && res.accounts.length > 0) {
-        setAccounts((prev) => mergeAccountsWithMaster(res.accounts, prev));
+        setAccounts((prev) => {
+          const merged = mergeAccountsWithMaster(res.accounts, prev);
+          try {
+            localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+        updatedAcc = res.accounts.find((a) => a.id === bankId);
       } else if (res.account) {
-        setAccounts((prev) =>
-          prev.map((a) => (a.id === bankId ? { ...a, ...res.account! } : a))
-        );
+        updatedAcc = res.account;
+        setAccounts((prev) => {
+          const next = prev.map((a) => (a.id === bankId ? { ...a, ...res.account! } : a));
+          try {
+            localStorage.setItem('cached_bank_accounts', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
+
+      if (updatedAcc) {
+        const oldUsd = preSyncUsdRef.current[bankId];
+        if (oldUsd !== undefined) {
+          const newUsd = calculateAccountUsd(updatedAcc, activeRateRef.current);
+          if (Math.abs(newUsd - oldUsd) >= 0.005) {
+            triggerCardDelta(bankId, newUsd - oldUsd);
+          }
+          delete preSyncUsdRef.current[bankId];
+        }
       }
     } catch (err) {
       console.warn(`Error syncing single bank ${bankId}:`, err);
@@ -539,19 +635,43 @@ export default function App() {
     montoUsd?: number
   ) => {
     try {
-      // Actualizar optimistamente el estado visual
-      setAccounts((prev) =>
-        prev.map((a) =>
+      // Calcular delta para actualización manual
+      const existing = accounts.find((a) => a.id === bankId);
+      if (existing) {
+        const oldUsd = calculateAccountUsd(existing, activeRateRef.current);
+        const tempAcc: BankAccount = {
+          ...existing,
+          balanceNative: monto,
+          montoUsd: montoUsd !== undefined ? montoUsd : existing.montoUsd,
+        };
+        const newUsd = calculateAccountUsd(tempAcc, activeRateRef.current);
+        if (Math.abs(newUsd - oldUsd) >= 0.005) {
+          triggerCardDelta(bankId, newUsd - oldUsd);
+        }
+      }
+
+      setJustUpdatedBankId(bankId);
+      setTimeout(() => setJustUpdatedBankId(null), 3000);
+
+      const nowIso = new Date().toISOString();
+
+      // Actualizar optimistamente el estado visual y persistir en caché local
+      setAccounts((prev) => {
+        const next = prev.map((a) =>
           a.id === bankId
             ? {
                 ...a,
                 balanceNative: monto,
                 montoUsd: montoUsd !== undefined ? montoUsd : a.montoUsd,
-                lastSync: new Date().toISOString(),
+                lastSync: nowIso,
               }
             : a
-        )
-      );
+        );
+        try {
+          localStorage.setItem('cached_bank_accounts', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
 
       // Enviar al backend / webhook
       const res = await updateBankBalance({
@@ -562,7 +682,13 @@ export default function App() {
       });
 
       if (res.accounts && res.accounts.length > 0) {
-        setAccounts(res.accounts);
+        setAccounts((prev) => {
+          const merged = mergeAccountsWithMaster(res.accounts, prev);
+          try {
+            localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
       }
     } catch (err) {
       console.warn('Error updating balance and sending webhook:', err);
@@ -657,6 +783,7 @@ export default function App() {
                     }
                     protectionSeconds={isBinanceAcc ? 0 : protectionSeconds}
                     justUpdated={justUpdatedBankId === acc.id}
+                    delta={cardDeltas[acc.id] || null}
                     onSync={handleSyncSingleBank}
                     onEditBalance={setEditingAccount}
                   />
