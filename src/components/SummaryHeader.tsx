@@ -46,11 +46,11 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
 
   return (
     <header className="space-y-3 pb-1">
-      {/* Barra superior: Título ComboxBanks */}
+      {/* Barra superior: Título PANEL DE SALDOS */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            ComboxBanks
+            PANEL DE SALDOS
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           </h1>
         </div>

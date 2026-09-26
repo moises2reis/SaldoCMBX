@@ -359,18 +359,52 @@ export default function App() {
     return list;
   }, [accounts]);
 
-  // Cuentas filtradas por categoría seleccionada
+  // Helper para calcular el valor total equivalente en Bolívares de una cuenta para ordenamiento
+  const getAccountBsValue = useCallback((acc: BankAccount): number => {
+    const isEfectivo = acc.categoria?.trim().toLowerCase() === 'efectivo';
+    if (isEfectivo) {
+      const bsPart = acc.balanceNative || 0;
+      const usdPart = (acc.montoUsd || 0) * activeRate;
+      return bsPart + usdPart;
+    }
+    if (acc.nativeCurrency === 'USD') {
+      return convertValue(acc.balanceNative || 0, 'USD', 'VES', activeRate);
+    }
+    if (acc.nativeCurrency === 'EUR') {
+      return convertValue(acc.balanceNative || 0, 'EUR', 'VES', activeRate);
+    }
+    return acc.balanceNative || 0;
+  }, [activeRate]);
+
+  // Cuentas filtradas por categoría seleccionada y ordenadas de mayor a menor monto
   const filteredAccounts = React.useMemo(() => {
-    if (selectedCategory === 'todos') return accounts;
-    return accounts.filter(
-      (a) => (a.categoria || 'Bancos').trim().toLowerCase() === selectedCategory.toLowerCase()
-    );
-  }, [accounts, selectedCategory]);
+    const list =
+      selectedCategory === 'todos'
+        ? [...accounts]
+        : accounts.filter(
+            (a) => (a.categoria || 'Bancos').trim().toLowerCase() === selectedCategory.toLowerCase()
+          );
+
+    return list.sort((a, b) => {
+      const valA = getAccountBsValue(a);
+      const valB = getAccountBsValue(b);
+      return valB - valA;
+    });
+  }, [accounts, selectedCategory, getAccountBsValue]);
 
   const currentCategoryLabel = React.useMemo(() => {
     const found = categories.find((c) => c.id === selectedCategory);
     return found ? found.label : 'Todos';
   }, [categories, selectedCategory]);
+
+  const dynamicSubtitle = React.useMemo(() => {
+    const normalized = selectedCategory.toLowerCase();
+    if (normalized === 'todos') return 'Lista de Todos';
+    if (normalized === 'banco' || normalized === 'bancos') return 'Lista de Bancos';
+    if (normalized === 'efectivo') return 'Lista de Efectivo';
+    if (normalized === 'binance') return 'Lista de Binance';
+    return `Lista de ${currentCategoryLabel}`;
+  }, [selectedCategory, currentCategoryLabel]);
 
   // Calcular totales consolidados dinámicos según la categoría seleccionada (incluyendo efectivo en Bs y $)
   const { totalBs, totalForeign } = React.useMemo(() => {
@@ -550,7 +584,7 @@ export default function App() {
           <div className="px-1 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Lista de Saldos
+                {dynamicSubtitle}
               </h2>
               <button
                 type="button"
@@ -639,7 +673,7 @@ export default function App() {
       {categories.length > 1 && (
         <nav
           aria-label="Filtro de categorías"
-          className="fixed bottom-0 left-0 right-0 z-40 bg-black border-t border-neutral-800/90 shadow-[0_-10px_35px_rgba(0,0,0,0.95)] px-2 sm:px-4 py-2 sm:py-2.5"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-black shadow-[0_-10px_35px_rgba(0,0,0,0.95)] px-2 sm:px-4 py-2 sm:py-2.5"
         >
           <div className="max-w-2xl mx-auto flex items-center justify-between sm:justify-center gap-1 sm:gap-3 overflow-x-auto no-scrollbar">
             {categories.map((cat) => {
