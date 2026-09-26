@@ -73,10 +73,11 @@ export default function App() {
 
   const [selectedCategory, setSelectedCategory] = useState<string>(() => {
     try {
+      // Limpiar cualquier residuo que forzara 'todos'
       const saved = localStorage.getItem('cached_selected_category');
-      if (saved) return saved;
+      if (saved && saved !== 'todos') return saved;
     } catch {}
-    return 'todos';
+    return 'bancos';
   });
 
   // Modal para editar saldo bancario individual y disparar webhook
@@ -93,7 +94,7 @@ export default function App() {
     }
   }, [accounts]);
 
-  // Persistir categoría seleccionada en caché
+  // Persistir categoría seleccionada en caché (por defecto 'bancos')
   useEffect(() => {
     try {
       if (selectedCategory) {
@@ -213,15 +214,14 @@ export default function App() {
     }
   }, []);
 
-  // Limpiar caché y forzar recarga en vivo de Google Apps Script
+  // Forzar recarga en vivo de Google Apps Script y fuentes oficiales
   const handleFullRefresh = useCallback(async () => {
     setIsSyncing(true);
     try {
-      clearBankCache();
       const data = await loadData(false, true);
       return data;
     } catch (err) {
-      console.warn('Error during full cache refresh:', err);
+      console.warn('Error during full refresh:', err);
     } finally {
       setIsSyncing(false);
     }

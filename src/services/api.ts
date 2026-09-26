@@ -182,6 +182,19 @@ function getLocalCachedAccounts(): BankAccount[] {
   return INITIAL_ACCOUNTS;
 }
 
+function getLocalCachedRates(): ExchangeRates {
+  try {
+    const saved = localStorage.getItem('cached_exchange_rates');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
+        return { ...INITIAL_RATES, ...parsed };
+      }
+    }
+  } catch {}
+  return INITIAL_RATES;
+}
+
 export function clearBankCache() {
   try {
     localStorage.removeItem('cached_bank_accounts');
@@ -193,19 +206,16 @@ export function clearBankCache() {
 
 /**
  * Consulta directa a Google Apps Script para tasas BCV (para GitHub Pages y fallback)
+ * IMPORTANTE: No enviar encabezados personalizados para evitar rechazo CORS preflight
  */
 export async function fetchRatesDirectly(forceFresh: boolean = false): Promise<ExchangeRates> {
-  let rates: ExchangeRates = { ...INITIAL_RATES };
+  const cachedRates = getLocalCachedRates();
+  let rates: ExchangeRates = { ...cachedRates };
   try {
-    const url = forceFresh
-      ? `${RATES_APPSCRIPT_URL}?fresh=true&_t=${Date.now()}`
-      : `${RATES_APPSCRIPT_URL}?_t=${Date.now()}`;
+    const url = `${RATES_APPSCRIPT_URL}${RATES_APPSCRIPT_URL.includes('?') ? '&' : '?'}_t=${Date.now()}`;
     const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
     });
     if (res.ok) {
       const data = await res.json();
@@ -223,8 +233,8 @@ export async function fetchRatesDirectly(forceFresh: boolean = false): Promise<E
         };
       }
     }
-  } catch {
-    // Usar tasas por defecto
+  } catch (err) {
+    console.warn('Direct fetchRatesDirectly fallback notice:', err);
   }
 
   // Intentar obtener tasa Binance P2P
@@ -272,20 +282,15 @@ export async function getOrFetchBinanceBalance(): Promise<{ totalUsd: number; la
 
 /**
  * Consulta directa a Google Apps Script para cuentas bancarias (para GitHub Pages y fallback)
+ * IMPORTANTE: Solicitud GET estándar con redirect 'follow' sin headers personalizados (evita CORS)
  */
 export async function fetchAccountsDirectly(forceFresh: boolean = false): Promise<BankAccount[]> {
-  const cached = forceFresh ? [] : getLocalCachedAccounts();
+  const cached = getLocalCachedAccounts();
   try {
-    const url = forceFresh
-      ? `${APPSCRIPT_URL}?fresh=true&_t=${Date.now()}`
-      : `${APPSCRIPT_URL}?_t=${Date.now()}`;
+    const url = `${APPSCRIPT_URL}${APPSCRIPT_URL.includes('?') ? '&' : '?'}_t=${Date.now()}`;
     const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-      },
-      signal: AbortSignal.timeout(10000),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
     });
     if (res.ok) {
       const rawData = await res.json();
@@ -319,7 +324,11 @@ export async function fetchAccountsDirectly(forceFresh: boolean = false): Promis
           };
         });
 
-        return mergeAccountsWithMaster(parsedAccounts, cached);
+        const merged = mergeAccountsWithMaster(parsedAccounts, cached);
+        try {
+          localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
+        } catch {}
+        return merged;
       }
     }
   } catch (err) {
@@ -327,7 +336,7 @@ export async function fetchAccountsDirectly(forceFresh: boolean = false): Promis
   }
 
   // Fallback seguro: Retornar cuentas cacheadas fusionadas con la lista maestra
-  return mergeAccountsWithMaster([], cached.length > 0 ? cached : getLocalCachedAccounts());
+  return mergeAccountsWithMaster([], cached);
 }
 
 /**
@@ -338,27 +347,18 @@ export async function fetchBalancesAndRates(forceFresh: boolean = false): Promis
   accounts: BankAccount[];
   rates: ExchangeRates;
 }> {
-  if (forceFresh) {
-    clearBankCache();
-  }
-
-  // 1. Intentar vía endpoint local /api con timeout adecuado
+  // 1. Intentar vía endpoint local /api con timeout adecuado (si hay backend activo)
   try {
     const url = forceFresh ? `/api/banks/balances?fresh=true&_t=${Date.now()}` : `/api/banks/balances?_t=${Date.now()}`;
     const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-      },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(6000),
     });
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (data && Array.isArray(data.accounts) && data.accounts.length >= 3) {
-          const merged = mergeAccountsWithMaster(data.accounts, forceFresh ? [] : getLocalCachedAccounts());
+          const merged = mergeAccountsWithMaster(data.accounts, getLocalCachedAccounts());
           try {
             localStorage.setItem('cached_bank_accounts', JSON.stringify(merged));
             if (data.rates) {
@@ -382,8 +382,8 @@ export async function fetchBalancesAndRates(forceFresh: boolean = false): Promis
     getOrFetchBinanceBalance(),
   ]);
 
-  // Fusionar siempre de manera segura con la plantilla maestra
-  const accounts = mergeAccountsWithMaster(directAccounts, forceFresh ? [] : getLocalCachedAccounts());
+  // Fusionar siempre de manera segura con los datos previos para evitar pérdidas
+  const accounts = mergeAccountsWithMaster(directAccounts, getLocalCachedAccounts());
 
   // Actualizar el saldo y fecha de sincronización de Binance obtenido desde Supabase
   const bIdx = accounts.findIndex(
