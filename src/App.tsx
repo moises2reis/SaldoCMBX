@@ -7,6 +7,7 @@ import {
   syncSingleBank,
   updateBankBalance,
   mergeAccountsWithMaster,
+  clearBankCache,
 } from './services/api';
 import { convertValue, isOlderThanMinutes } from './utils/formatters';
 import { SummaryHeader } from './components/SummaryHeader';
@@ -212,6 +213,20 @@ export default function App() {
     }
   }, []);
 
+  // Limpiar caché y forzar recarga en vivo de Google Apps Script
+  const handleFullRefresh = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      clearBankCache();
+      const data = await loadData(false, true);
+      return data;
+    } catch (err) {
+      console.warn('Error during full cache refresh:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [loadData]);
+
   // Cargar datos al entrar a la página (en segundo plano si ya hay caché para inicio instantáneo)
   useEffect(() => {
     const hasCached = !!localStorage.getItem('cached_bank_accounts');
@@ -316,7 +331,7 @@ export default function App() {
       ? bcvEurRate
       : binanceP2pRate;
 
-  // Extraer categorías dinámicas con conteo de bancos
+  // Extraer categorías dinámicas con conteo de bancos (con 'Todos' al final a la derecha)
   const categories = React.useMemo(() => {
     const catMap = new Map<string, number>();
     accounts.forEach((acc) => {
@@ -325,9 +340,7 @@ export default function App() {
       catMap.set(normalized, (catMap.get(normalized) || 0) + 1);
     });
 
-    const list: { id: string; label: string; count: number }[] = [
-      { id: 'todos', label: 'Todos', count: accounts.length },
-    ];
+    const list: { id: string; label: string; count: number }[] = [];
 
     const preferredOrder = ['bancos', 'efectivo', 'binance'];
     const addedKeys = new Set<string>();
@@ -355,6 +368,9 @@ export default function App() {
         list.push({ id: catKey, label, count });
       }
     });
+
+    // Colocar "Todos" de último a la derecha
+    list.push({ id: 'todos', label: 'Todos', count: accounts.length });
 
     return list;
   }, [accounts]);
@@ -571,7 +587,7 @@ export default function App() {
             isSyncing={isSyncing}
             hideBalances={hideHeaderTotal}
             onToggleHideBalances={handleToggleHideHeaderTotal}
-            onRefresh={() => loadData(false, true)}
+            onRefresh={handleFullRefresh}
             categoryLabel={currentCategoryLabel}
           />
 

@@ -225,14 +225,19 @@ async function startServer() {
   let lastFetchTimestamp = 0;
 
   // Función para obtener tasas oficiales dinámicas desde el Google Apps Script
-  async function fetchRatesFromAppScript() {
+  async function fetchRatesFromAppScript(forceFresh = false) {
     try {
-      const response = await fetch(RATES_APPSCRIPT_URL, {
+      const url = forceFresh || lastFetchTimestamp === 0
+        ? `${RATES_APPSCRIPT_URL}?fresh=true&_t=${Date.now()}`
+        : `${RATES_APPSCRIPT_URL}?_t=${Date.now()}`;
+      const response = await fetch(url, {
         redirect: 'follow',
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'application/json, text/plain, */*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
         },
         signal: AbortSignal.timeout(8000),
       });
@@ -262,16 +267,21 @@ async function startServer() {
   }
 
   // Función para obtener los datos de bancos desde Google Apps Script
-  async function fetchAccountsFromAppScript(): Promise<BankAccount[]> {
+  async function fetchAccountsFromAppScript(forceFresh = false): Promise<BankAccount[]> {
     try {
-      const response = await fetch(APPSCRIPT_URL, {
+      const url = forceFresh || lastFetchTimestamp === 0
+        ? `${APPSCRIPT_URL}?fresh=true&_t=${Date.now()}`
+        : `${APPSCRIPT_URL}?_t=${Date.now()}`;
+      const response = await fetch(url, {
         redirect: 'follow',
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'application/json, text/plain, */*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
         },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(9000),
       });
 
       if (response.ok) {
@@ -488,9 +498,13 @@ async function startServer() {
     }
 
     // Si el caché está frío o se solicitó refresco manual, consultar fuentes
+    if (isForceRefresh) {
+      lastFetchTimestamp = 0;
+    }
+
     const [accounts, rates, p2pPrice] = await Promise.all([
-      fetchAccountsFromAppScript(),
-      fetchRatesFromAppScript(),
+      fetchAccountsFromAppScript(isForceRefresh),
+      fetchRatesFromAppScript(isForceRefresh),
       obtenerTasaBinanceP2P().catch(() => cachedRates.binanceP2p),
     ]);
 
