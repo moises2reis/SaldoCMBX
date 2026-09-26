@@ -26,6 +26,7 @@ export interface BankAccount {
   montoUsd?: number;
   lastSync: string;
   linkActualizar?: string;
+  localUpdatedMs?: number;
 }
 
 export interface BinanceAssetItem {

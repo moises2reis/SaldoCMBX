@@ -654,6 +654,7 @@ export default function App() {
       setTimeout(() => setJustUpdatedBankId(null), 3000);
 
       const nowIso = new Date().toISOString();
+      const nowMs = Date.now();
 
       // Actualizar optimistamente el estado visual y persistir en caché local
       setAccounts((prev) => {
@@ -664,6 +665,7 @@ export default function App() {
                 balanceNative: monto,
                 montoUsd: montoUsd !== undefined ? montoUsd : a.montoUsd,
                 lastSync: nowIso,
+                localUpdatedMs: nowMs,
               }
             : a
         );

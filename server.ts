@@ -375,8 +375,17 @@ async function startServer() {
           const seenIds = new Set<string>();
           const parsedAccounts = rawData.map((item, index) => {
             const rawName = String(item.id_banco || '').trim();
-            let cleanId =
-              rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
+            const normRaw = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            let cleanId = '';
+            if (normRaw.includes('sencill') || normRaw === 'bovedasencillo') {
+              cleanId = 'boveda-sencillo';
+            } else if (normRaw === 'boveda') {
+              cleanId = 'boveda';
+            } else {
+              cleanId = rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
+            }
+
             if (seenIds.has(cleanId)) {
               cleanId = `${cleanId}-${index}`;
             }
@@ -629,7 +638,10 @@ async function startServer() {
 
     // Buscar la cuenta en caché
     const account = cachedAccounts.find(
-      (a) => a.id === bankId || a.bankId === bankId || a.bankShort.toLowerCase().includes(bankId)
+      (a) =>
+        a.id.toLowerCase() === bankId ||
+        a.bankId?.toLowerCase() === bankId ||
+        a.bankShort.toLowerCase() === bankId
     );
 
     // Si tiene link de actualización (MacroDroid trigger)
@@ -677,6 +689,8 @@ async function startServer() {
     // 1. Enviar Webhook a Google Apps Script
     let scriptUrl = `${APPSCRIPT_URL}${APPSCRIPT_URL.includes('?') ? '&' : '?'}banco=${encodeURIComponent(
       bankIdentifier
+    )}&id_banco=${encodeURIComponent(bankIdentifier)}&id=${encodeURIComponent(
+      id || bankIdentifier
     )}&monto=${encodeURIComponent(numMontoBs)}&monto_bs=${encodeURIComponent(numMontoBs)}`;
 
     if (numMontoUsd !== undefined && !isNaN(numMontoUsd)) {
@@ -697,10 +711,10 @@ async function startServer() {
     // 2. Actualizar caché local de inmediato
     const bIndex = cachedAccounts.findIndex(
       (a) =>
+        (id && a.id.toLowerCase() === String(id).toLowerCase()) ||
         a.id.toLowerCase() === String(bankIdentifier).toLowerCase() ||
         a.bankShort.toLowerCase() === String(bankIdentifier).toLowerCase() ||
-        a.bankId.toLowerCase() === String(bankIdentifier).toLowerCase() ||
-        (id && a.id.toLowerCase() === String(id).toLowerCase())
+        a.bankId.toLowerCase() === String(bankIdentifier).toLowerCase()
     );
 
     if (bIndex !== -1) {

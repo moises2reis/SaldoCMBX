@@ -78,25 +78,19 @@ export function mergeAccountsWithMaster(
     }
   });
 
-  // 3. Aplicar actualizaciones entrantes con validación estricta de marcas de tiempo
+  // 3. Aplicar actualizaciones entrantes con protección para ediciones manuales recientes
   incomingList.forEach((inc) => {
     const key = findMatchingKey(inc);
 
     if (key) {
       const existing = masterMap.get(key)!;
-      const existingTime = getTimestampMs(existing.lastSync);
-      const incomingTime = getTimestampMs(inc.lastSync);
 
-      // Si el estado previo local tiene una fecha MÁS RECIENTE que la entrante,
-      // no degradar el saldo al valor antiguo que devolvió Google Apps Script
-      const existingIsNewer =
-        existingTime > 0 && incomingTime > 0 && existingTime > incomingTime;
+      // Solo preservar el saldo previo si el usuario realizó un cambio manual / macro en esta sesión recientemente (< 2 min)
+      const isRecentManualLocalEdit =
+        existing.localUpdatedMs !== undefined &&
+        Date.now() - existing.localUpdatedMs < 120000;
 
-      // Si la cuenta local se actualizó hace menos de 90 segundos y el incoming no trae fecha nueva
-      const existingIsFreshLocalEdit =
-        existingTime > 0 && Date.now() - existingTime < 90000 && incomingTime <= existingTime;
-
-      const shouldPreserveExistingBalance = existingIsNewer || existingIsFreshLocalEdit;
+      const shouldPreserveExistingBalance = isRecentManualLocalEdit;
 
       const updated: BankAccount = {
         ...existing,
@@ -113,14 +107,10 @@ export function mergeAccountsWithMaster(
         updated.balanceNative = existing.balanceNative;
         updated.montoUsd = existing.montoUsd;
         updated.lastSync = existing.lastSync;
+        updated.localUpdatedMs = existing.localUpdatedMs;
       } else {
         if (inc.balanceNative !== undefined && !isNaN(inc.balanceNative)) {
-          // No permitir que un 0 sin fecha destruya un saldo positivo previo con fecha
-          if (inc.balanceNative === 0 && existing.balanceNative > 0 && !inc.lastSync) {
-            updated.balanceNative = existing.balanceNative;
-          } else {
-            updated.balanceNative = inc.balanceNative;
-          }
+          updated.balanceNative = inc.balanceNative;
         }
         if (inc.montoUsd !== undefined && !isNaN(inc.montoUsd)) {
           updated.montoUsd = inc.montoUsd;
@@ -128,6 +118,7 @@ export function mergeAccountsWithMaster(
         if (inc.lastSync) {
           updated.lastSync = inc.lastSync;
         }
+        delete updated.localUpdatedMs;
       }
 
       masterMap.set(key, updated);
@@ -330,8 +321,17 @@ export async function fetchAccountsDirectly(forceFresh: boolean = false): Promis
         const seenIds = new Set<string>();
         const parsedAccounts: BankAccount[] = rawData.map((item, index) => {
           const rawName = String(item.id_banco || '').trim();
-          let cleanId =
-            rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
+          const normRaw = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          let cleanId = '';
+          if (normRaw.includes('sencill') || normRaw === 'bovedasencillo') {
+            cleanId = 'boveda-sencillo';
+          } else if (normRaw === 'boveda') {
+            cleanId = 'boveda';
+          } else {
+            cleanId = rawName.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bank-${index}`;
+          }
+
           if (seenIds.has(cleanId)) {
             cleanId = `${cleanId}-${index}`;
           }
@@ -548,7 +548,9 @@ export async function updateBankBalance(payload: {
 
   // 3. Envío directo del Webhook a Google Apps Script (para GitHub Pages)
   try {
-    let directUrl = `${APPSCRIPT_URL}?banco=${encodeURIComponent(payload.banco)}&monto=${encodeURIComponent(
+    let directUrl = `${APPSCRIPT_URL}?banco=${encodeURIComponent(payload.banco)}&id_banco=${encodeURIComponent(
+      payload.banco
+    )}&id=${encodeURIComponent(payload.id)}&monto=${encodeURIComponent(
       payload.monto
     )}&monto_bs=${encodeURIComponent(payload.monto)}`;
     if (payload.montoUsd !== undefined) {
