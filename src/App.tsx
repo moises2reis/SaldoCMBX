@@ -556,8 +556,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-slate-950 px-4 pb-32 sm:pb-36">
       <div className="max-w-2xl mx-auto">
-        {/* Encabezado fijo / estático: Nombre, Tasas y Totales */}
-        <div className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md pt-4 sm:pt-6 pb-2.5 space-y-3 -mx-4 px-4 shadow-lg shadow-slate-950/40">
+        {/* Encabezado: Saldo General, Tasas y PWA (se desplazan al hacer scroll) */}
+        <div className="pt-4 sm:pt-6 pb-2.5 space-y-3">
           {/* Encabezado: Total en Dólares ($) en verde arriba, Total en Bs en gris abajo */}
           <SummaryHeader
             totalBs={totalBs}
