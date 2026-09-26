@@ -122,6 +122,18 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
     }
   }, [account, isOpen]);
 
+  // Permitir cerrar inmediatamente con la tecla Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
   if (!isOpen || !account) return null;
 
   const isEfectivo = account.categoria?.trim().toLowerCase() === 'efectivo';
@@ -145,15 +157,17 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
     setter(formatInputValue(val));
   };
 
-  const handleMacroSync = async () => {
+  const handleMacroSync = () => {
     if (isBlocked || isSyncingMacro) return;
     setMacroTriggered(true);
     if (onSyncMacro) {
-      await onSyncMacro(account.id);
+      // Disparar sincronización en segundo plano sin retener la ventana
+      Promise.resolve(onSyncMacro(account.id)).catch((err) => {
+        console.warn('Error en sincronización en segundo plano:', err);
+      });
     }
-    setTimeout(() => {
-      onClose();
-    }, 1200);
+    // Cerrar inmediatamente la ventana modal para permitir interactuar con la app
+    onClose();
   };
 
   // Guardar cambio de saldo manual directo
@@ -259,7 +273,14 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
       : Math.max(0, currentRegularNum - deltaRegularNum);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSubmitting) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl relative overflow-hidden">
         {/* Encabezado con Icono del Banco/Efectivo y Botón Cerrar */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-800 mb-4">
@@ -288,7 +309,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting || isSyncingMacro}
+            disabled={isSubmitting}
             className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors"
             aria-label="Cerrar"
           >
@@ -369,28 +390,13 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
               {/* Registro completo de Fecha y Hora de la última actualización */}
               <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-3 text-left space-y-1.5 shadow-inner">
-                <div className="flex items-center justify-between gap-1 text-[11px]">
-                  <span className="text-slate-400 flex items-center gap-1.5 font-medium">
-                    <Clock
-                      className={`w-3.5 h-3.5 ${
-                        isBinance ? 'text-amber-400' : isOutdated ? 'text-amber-400' : 'text-emerald-400'
-                      }`}
-                    />
-                    Última actualización:
-                  </span>
-                  {timeAgoText && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                        isBinance
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          : isOutdated
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      }`}
-                    >
-                      {isOutdated ? `Hace ${timeAgoText}` : `Al día (${timeAgoText})`}
-                    </span>
-                  )}
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+                  <Clock
+                    className={`w-3.5 h-3.5 ${
+                      isBinance ? 'text-amber-400' : isOutdated ? 'text-amber-400' : 'text-emerald-400'
+                    }`}
+                  />
+                  <span>Última actualización:</span>
                 </div>
 
                 <div className="text-xs font-mono font-semibold text-slate-200 tracking-tight pl-5">

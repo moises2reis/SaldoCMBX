@@ -22,10 +22,19 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   account,
   activeRate,
   hideBalances = false,
+  isSyncing = false,
+  isBlocked = false,
   isLoadingInitial = false,
+  protectionSeconds = 0,
+  justUpdated = false,
   onEditBalance,
 }) => {
   const [, setTick] = useState(0);
+  const [delta, setDelta] = useState<{ diff: number; key: number } | null>(null);
+  const prevBalanceNativeRef = React.useRef<number | null>(null);
+  const prevMontoUsdRef = React.useRef<number | null>(null);
+  const prevAmountUsdRef = React.useRef<number | null>(null);
+  const isInitialisedRef = React.useRef(false);
 
   // Recalcular el tiempo transcurrido cada 15 segundos
   useEffect(() => {
@@ -63,6 +72,61 @@ export const BankListItem: React.FC<BankListItemProps> = ({
     amountUsd = activeRate > 0 ? amountBs / activeRate : 0;
   }
 
+  // Detectar cambios en el saldo en tiempo real para disparar la superposición animada de diferencia (+/-) por 10 segundos
+  // Evita falsos positivos: sólo se dispara si el saldo real nativo o en USD de la cuenta cambió y no en la carga inicial
+  useEffect(() => {
+    if (isLoadingInitial) {
+      prevBalanceNativeRef.current = account.balanceNative;
+      prevMontoUsdRef.current = account.montoUsd || 0;
+      prevAmountUsdRef.current = amountUsd;
+      return;
+    }
+
+    if (!isInitialisedRef.current) {
+      isInitialisedRef.current = true;
+      prevBalanceNativeRef.current = account.balanceNative;
+      prevMontoUsdRef.current = account.montoUsd || 0;
+      prevAmountUsdRef.current = amountUsd;
+      return;
+    }
+
+    const prevNative = prevBalanceNativeRef.current;
+    const prevUsd = prevMontoUsdRef.current;
+    const prevTotalUsd = prevAmountUsdRef.current;
+
+    const currentNative = account.balanceNative || 0;
+    const currentUsd = account.montoUsd || 0;
+
+    // Verificar si el saldo nativo o USD de la cuenta cambió realmente
+    const nativeChanged =
+      prevNative !== null && Math.abs(currentNative - prevNative) >= 0.005;
+    const usdChanged =
+      prevUsd !== null && Math.abs(currentUsd - prevUsd) >= 0.005;
+
+    if (nativeChanged || usdChanged) {
+      if (prevTotalUsd !== null) {
+        const diff = amountUsd - prevTotalUsd;
+        if (Math.abs(diff) >= 0.005) {
+          setDelta({ diff, key: Date.now() });
+
+          // Desaparecer la animación a los 10 segundos
+          const timer = setTimeout(() => {
+            setDelta(null);
+          }, 10000);
+
+          prevBalanceNativeRef.current = currentNative;
+          prevMontoUsdRef.current = currentUsd;
+          prevAmountUsdRef.current = amountUsd;
+          return () => clearTimeout(timer);
+        }
+      }
+    }
+
+    prevBalanceNativeRef.current = currentNative;
+    prevMontoUsdRef.current = currentUsd;
+    prevAmountUsdRef.current = amountUsd;
+  }, [account.balanceNative, account.montoUsd, amountUsd, isLoadingInitial]);
+
   // Subtítulo: para Binance mostrar específicamente 1272204580, para efectivo mostrar indicador
   const displaySubtitle = isBinance
     ? '1272204580'
@@ -74,6 +138,27 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   const isZero = isEfectivo
     ? !hideBalances && Math.abs(cashUsd) < 0.001 && Math.abs(cashBs) < 0.001
     : !hideBalances && Math.abs(amountUsd) < 0.001 && Math.abs(amountBs) < 0.001;
+
+  const renderDeltaBadge = () => {
+    if (!delta || hideBalances) return null;
+    const isPositive = delta.diff > 0;
+    const formattedDiff = `${isPositive ? '+' : '-'}${formatUSD(Math.abs(delta.diff))}`;
+
+    return (
+      <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 z-30 pointer-events-none whitespace-nowrap">
+        <span
+          key={delta.key}
+          className={`inline-flex items-center text-[10px] sm:text-xs font-mono font-extrabold px-1.5 py-0.5 rounded-lg shadow-lg border backdrop-blur-md animate-in fade-in zoom-in-95 slide-in-from-right-2 duration-200 select-none ${
+            isPositive
+              ? 'bg-emerald-500/30 text-emerald-300 border-emerald-400/60 shadow-emerald-950/80 ring-1 ring-emerald-400/40'
+              : 'bg-rose-500/30 text-rose-300 border-rose-400/60 shadow-rose-950/80 ring-1 ring-rose-400/40'
+          }`}
+        >
+          {formattedDiff}
+        </span>
+      </div>
+    );
+  };
 
   const handleCardClick = () => {
     if (onEditBalance) {
@@ -87,12 +172,38 @@ export const BankListItem: React.FC<BankListItemProps> = ({
       role="button"
       tabIndex={0}
       title="Toca para actualizar (Macro o Manual)"
-      className="bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/90 active:scale-[0.985] active:brightness-95 border border-slate-800/80 hover:border-slate-700 rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all duration-150 flex items-center justify-between gap-3 shadow-sm select-none group cursor-pointer"
+      className={`relative overflow-hidden rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all duration-300 flex items-center justify-between gap-3 shadow-sm select-none group cursor-pointer ${
+        isSyncing
+          ? 'bg-slate-900 border-amber-500/60 ring-1 ring-amber-500/50 shadow-lg shadow-amber-500/10'
+          : justUpdated
+          ? 'bg-slate-900 border-emerald-500/70 ring-1 ring-emerald-500/50 shadow-lg shadow-emerald-500/15'
+          : 'bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/90 active:scale-[0.985] active:brightness-95 border border-slate-800/80 hover:border-slate-700'
+      }`}
     >
+      {/* Barra animada de escaneo superior cuando la macro está actualizando */}
+      {isSyncing && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent animate-pulse" />
+      )}
+      {justUpdated && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent" />
+      )}
+
       {/* Izquierda: Icono y nombre */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 bg-slate-800/80 border-slate-700/50 group-hover:border-slate-600 transition-colors">
-          {isBinance ? (
+        <div
+          className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 transition-colors ${
+            isSyncing
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+              : justUpdated
+              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+              : 'bg-slate-800/80 border-slate-700/50 group-hover:border-slate-600'
+          }`}
+        >
+          {isSyncing ? (
+            <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
+          ) : justUpdated ? (
+            <Check className="w-4 h-4 text-emerald-400 animate-bounce" />
+          ) : isBinance ? (
             <Gem className="w-4 h-4 text-slate-400" />
           ) : isEfectivo ? (
             <Banknote className="w-4 h-4 text-slate-400" />
@@ -103,15 +214,28 @@ export const BankListItem: React.FC<BankListItemProps> = ({
 
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-white tracking-tight truncate group-hover:text-emerald-300 transition-colors">
+            <span
+              className={`font-bold text-sm tracking-tight truncate transition-colors ${
+                isSyncing
+                  ? 'text-amber-200'
+                  : justUpdated
+                  ? 'text-emerald-300'
+                  : 'text-white group-hover:text-emerald-300'
+              }`}
+            >
               {account.bankShort}
             </span>
           </div>
-          {displaySubtitle && (
+
+          {isSyncing ? (
+            <div className="text-[11px] text-amber-300 font-mono truncate mt-0.5 animate-pulse">
+              Actualizando con macro {protectionSeconds > 0 ? `(${protectionSeconds}s)` : '...'}
+            </div>
+          ) : displaySubtitle ? (
             <div className="text-[11px] text-slate-400 font-mono truncate mt-0.5">
               {displaySubtitle}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -129,9 +253,12 @@ export const BankListItem: React.FC<BankListItemProps> = ({
           </div>
         ) : isEfectivo ? (
           <>
-            {/* Tarjeta Efectivo: Total en $ en VERDE */}
-            <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
-              {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+            {/* Tarjeta Efectivo: Total en $ en VERDE con superposición flotante a la izquierda */}
+            <div className="relative inline-flex items-center justify-end">
+              {renderDeltaBadge()}
+              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+                {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+              </div>
             </div>
 
             {/* Tarjeta Efectivo: Debajo en GRIS y más pequeño los montos en $ y Bs individuales */}
@@ -149,9 +276,12 @@ export const BankListItem: React.FC<BankListItemProps> = ({
           </>
         ) : (
           <>
-            {/* Monto en Dólares (Original: siempre Verde) */}
-            <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
-              {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+            {/* Monto en Dólares con superposición flotante a la izquierda */}
+            <div className="relative inline-flex items-center justify-end">
+              {renderDeltaBadge()}
+              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+                {hideBalances ? '$ ****' : formatUSD(amountUsd)}
+              </div>
             </div>
 
             {/* Monto en Bolívares (Original: siempre Gris) */}
@@ -161,8 +291,8 @@ export const BankListItem: React.FC<BankListItemProps> = ({
           </>
         )}
 
-        {/* Tiempo transcurrido debajo del monto (solo si existe fecha) */}
-        {timeAgoText ? (
+        {/* Tiempo transcurrido debajo del monto (solo si existe fecha y no está sincronizando) */}
+        {!isSyncing && timeAgoText ? (
           <div
             className={`inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono tabular-nums mt-0.5 ${
               isOutdated ? 'text-amber-400 font-medium' : 'text-slate-500'
