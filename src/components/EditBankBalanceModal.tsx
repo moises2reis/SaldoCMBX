@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BankAccount } from '../types/dashboard';
-import { formatSmartUpdateTime, isOlderThanOneHourAndHalf } from '../utils/formatters';
+import {
+  formatSmartUpdateTime,
+  isOlderThanOneHourAndHalf,
+  formatFullDateTime,
+} from '../utils/formatters';
 import {
   X,
   Check,
@@ -127,6 +131,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
     account.bankShort.toLowerCase().includes('binance');
 
   const timeAgoText = formatSmartUpdateTime(account.lastSync);
+  const fullDateTimeText = formatFullDateTime(account.lastSync);
   const isOutdated = isOlderThanOneHourAndHalf(account.lastSync);
 
   const currencyUnit = isBinance ? 'USDT' : account.nativeCurrency === 'USD' ? 'USD' : 'Bs.';
@@ -338,7 +343,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
         {/* CONTENIDO PESTAÑA: ACTUALIZAR CON MACRO / API BINANCE */}
         {activeTab === 'macro' && (
           <div className="space-y-4 py-1">
-            <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 text-center space-y-2">
+            <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 text-center space-y-3">
               <div
                 className={`w-11 h-11 mx-auto rounded-full flex items-center justify-center border transition-colors ${
                   isBinance
@@ -355,22 +360,42 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
                 <h4 className="text-sm font-semibold text-white">
                   {isBinance ? 'Sincronización con API Binance' : 'Actualización Automática'}
                 </h4>
-                {isBinance ? (
+                {isBinance && (
                   <p className="text-[11px] text-slate-400 mt-1 font-mono">
                     Consulta en vivo Spot + Funding + Simple Earn Flexible
                   </p>
-                ) : (
-                  timeAgoText && (
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mt-1 rounded-full text-[11px] font-mono font-medium border transition-colors">
-                      <Clock
-                        className={`w-3 h-3 ${isOutdated ? 'text-amber-400' : 'text-emerald-400'}`}
-                      />
-                      <span className={isOutdated ? 'text-amber-300' : 'text-emerald-300'}>
-                        {isOutdated ? `Desactualizado: hace ${timeAgoText}` : `Al día: hace ${timeAgoText}`}
-                      </span>
-                    </div>
-                  )
                 )}
+              </div>
+
+              {/* Registro completo de Fecha y Hora de la última actualización */}
+              <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-3 text-left space-y-1.5 shadow-inner">
+                <div className="flex items-center justify-between gap-1 text-[11px]">
+                  <span className="text-slate-400 flex items-center gap-1.5 font-medium">
+                    <Clock
+                      className={`w-3.5 h-3.5 ${
+                        isBinance ? 'text-amber-400' : isOutdated ? 'text-amber-400' : 'text-emerald-400'
+                      }`}
+                    />
+                    Última actualización:
+                  </span>
+                  {timeAgoText && (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                        isBinance
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : isOutdated
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                    >
+                      {isOutdated ? `Hace ${timeAgoText}` : `Al día (${timeAgoText})`}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs font-mono font-semibold text-slate-200 tracking-tight pl-5">
+                  {fullDateTimeText || 'Sin registro de fecha'}
+                </div>
               </div>
             </div>
 

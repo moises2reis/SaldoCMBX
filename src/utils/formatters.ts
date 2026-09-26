@@ -231,3 +231,29 @@ export function formatSmartUpdateTime(val: unknown): string {
 
   return `${days} días`;
 }
+
+/**
+ * Formatea una fecha y hora completa en español:
+ * Ej: "25 sep 2026 • 07:15:30 PM"
+ */
+export function formatFullDateTime(val: unknown): string {
+  if (!val) return '';
+  const date = parseFlexibleDate(val);
+  if (!date) return typeof val === 'string' ? val : '';
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const monthStr = months[date.getMonth()];
+  const year = date.getFullYear();
+
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const formattedHours = String(hours).padStart(2, '0');
+
+  return `${day} ${monthStr} ${year} • ${formattedHours}:${minutes}:${seconds} ${ampm}`;
+}
+
