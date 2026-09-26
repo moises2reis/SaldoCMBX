@@ -46,16 +46,6 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
 
   return (
     <header className="space-y-3 pb-1">
-      {/* Barra superior: Título PANEL DE SALDOS */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            PANEL DE SALDOS
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          </h1>
-        </div>
-      </div>
-
       {/* Island de las tasas: Botones de tasas + Fecha Valor debajo dentro del mismo contenedor */}
       <div className="flex justify-center w-full pt-0.5 pb-1">
         <div className="inline-flex flex-col items-center bg-slate-900 border border-slate-800 rounded-2xl shadow-inner text-[11px] overflow-hidden">
