@@ -127,7 +127,7 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
           </div>
         )}
         <div className="flex items-center gap-2.5">
-          <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-400 tabular-nums tracking-tight">
+          <div className="text-3xl sm:text-4xl font-black font-mono text-emerald-400 tabular-nums tracking-tight">
             {hideBalances ? '$ ****' : formatUSD(totalForeign)}
           </div>
           <button
