@@ -58,13 +58,6 @@ export function mergeAccountsWithMaster(
       }
     }
 
-    for (const [k, v] of masterMap.entries()) {
-      const vNorm = normalizeName(v.bankName || v.id);
-      if (normName.length >= 3 && (vNorm.includes(normName) || normName.includes(vNorm))) {
-        return k;
-      }
-    }
-
     return null;
   };
 
