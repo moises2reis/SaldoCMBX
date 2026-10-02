@@ -8,9 +8,9 @@
     "accountNumber": "V10940603",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 2622026.26,
+    "balanceNative": 2282772.08,
     "montoUsd": 0,
-    "lastSync": "25/09/2026 09:18:35 AM",
+    "lastSync": "02/10/2026 08:23:20 AM",
     "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BDV"
   },
   {
@@ -22,9 +22,9 @@
     "accountNumber": "V26306188",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 2.66,
+    "balanceNative": 1068.72,
     "montoUsd": 0,
-    "lastSync": "24/09/2026 10:37:00 PM",
+    "lastSync": "02/10/2026 08:24:50 AM",
     "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BANESCO"
   },
   {
@@ -36,9 +36,9 @@
     "accountNumber": "V10940603",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 462647.25,
+    "balanceNative": 640693.4,
     "montoUsd": 0,
-    "lastSync": "25/09/2026 09:19:16 AM",
+    "lastSync": "02/10/2026 08:24:01 AM",
     "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BNC"
   },
   {
@@ -52,8 +52,8 @@
     "nativeCurrency": "VES",
     "balanceNative": 1626.06,
     "montoUsd": 0,
-    "lastSync": "23/09/2026 12:47:36 PM",
-    "linkActualizar": ""
+    "lastSync": "29/09/2026 01:22:20 AM",
+    "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BDVCOMBOX"
   },
   {
     "id": "bdv-fabrica-combox-c-a",
@@ -64,10 +64,10 @@
     "accountNumber": "J502977651",
     "categoria": "Bancos",
     "nativeCurrency": "VES",
-    "balanceNative": 0,
+    "balanceNative": 866.56,
     "montoUsd": 0,
-    "lastSync": "",
-    "linkActualizar": ""
+    "lastSync": "01/10/2026 04:34:17 PM",
+    "linkActualizar": "https://trigger.macrodroid.com/25be1f4a-0ab8-459e-977c-a6b58d1d3edf/BDVCOMBOX"
   },
   {
     "id": "bolso",
@@ -75,12 +75,12 @@
     "bankName": "BOLSO",
     "bankShort": "BOLSO",
     "accountType": "Cuenta Bancaria",
-    "accountNumber": "",
+    "accountNumber": "Efectivo",
     "categoria": "Efectivo",
     "nativeCurrency": "VES",
     "balanceNative": 77150,
-    "montoUsd": 2950,
-    "lastSync": "24/09/2026 05:43:57 PM",
+    "montoUsd": 0,
+    "lastSync": "02/10/2026 09:07:14 AM",
     "linkActualizar": ""
   },
   {
@@ -89,12 +89,40 @@
     "bankName": "BOVEDA",
     "bankShort": "BOVEDA",
     "accountType": "Cuenta Bancaria",
-    "accountNumber": "",
+    "accountNumber": "Efectivo",
     "categoria": "Efectivo",
     "nativeCurrency": "VES",
     "balanceNative": 0,
-    "montoUsd": 0,
-    "lastSync": "",
+    "montoUsd": 23850,
+    "lastSync": "02/10/2026 09:07:00 AM",
+    "linkActualizar": ""
+  },
+  {
+    "id": "boveda-sencillo",
+    "bankId": "boveda-sencillo",
+    "bankName": "BOVEDA SENCILLO",
+    "bankShort": "BOVEDA SENCILLO",
+    "accountType": "Cuenta Bancaria",
+    "accountNumber": "Efectivo",
+    "categoria": "Efectivo",
+    "nativeCurrency": "VES",
+    "balanceNative": 0,
+    "montoUsd": 732,
+    "lastSync": "25/09/2026 11:46:25 PM",
+    "linkActualizar": ""
+  },
+  {
+    "id": "binance",
+    "bankId": "binance",
+    "bankName": "Binance",
+    "bankShort": "BINANCE",
+    "accountType": "ID",
+    "accountNumber": "1272204580",
+    "categoria": "Binance",
+    "nativeCurrency": "USD",
+    "balanceNative": 413.67,
+    "montoUsd": 413.67,
+    "lastSync": "2026-10-02T13:10:55.097Z",
     "linkActualizar": ""
   }
 ]

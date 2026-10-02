@@ -94,7 +94,7 @@ export default function App() {
       const saved = localStorage.getItem('cached_bank_accounts');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return !Array.isArray(parsed) || parsed.length === 0 || !parsed.some((a: BankAccount) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0));
+        return !Array.isArray(parsed) || parsed.length === 0 || !parsed.some((a: BankAccount) => (a.balanceNative !== undefined && a.balanceNative !== 0) || (a.montoUsd !== undefined && a.montoUsd !== 0));
       }
     } catch {}
     return true;
@@ -206,7 +206,7 @@ export default function App() {
 
       if (data?.accounts && data.accounts.length > 0) {
         const hasAnyLiveBalance = data.accounts.some(
-          (a) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0) || Boolean(a.lastSync)
+          (a) => (a.balanceNative !== undefined && a.balanceNative !== 0) || (a.montoUsd !== undefined && a.montoUsd !== 0) || Boolean(a.lastSync)
         );
 
         if (hasAnyLiveBalance) {
@@ -430,6 +430,9 @@ export default function App() {
     if (acc.nativeCurrency === 'EUR') {
       return convertValue(acc.balanceNative || 0, 'EUR', 'VES', activeRate);
     }
+    if ((acc.balanceNative === 0 || acc.balanceNative === undefined) && acc.montoUsd !== undefined && acc.montoUsd !== 0) {
+      return acc.montoUsd * activeRate;
+    }
     return acc.balanceNative || 0;
   }, [activeRate]);
 
@@ -473,11 +476,15 @@ export default function App() {
         const usdPart = (acc.montoUsd || 0) * activeRate;
         bs += bsPart + usdPart;
       } else if (acc.nativeCurrency === 'VES') {
-        bs += acc.balanceNative;
+        if ((acc.balanceNative === 0 || acc.balanceNative === undefined) && acc.montoUsd !== undefined && acc.montoUsd !== 0) {
+          bs += acc.montoUsd * activeRate;
+        } else {
+          bs += acc.balanceNative || 0;
+        }
       } else if (acc.nativeCurrency === 'USD') {
-        bs += convertValue(acc.balanceNative, 'USD', 'VES', activeRate);
+        bs += convertValue(acc.balanceNative || 0, 'USD', 'VES', activeRate);
       } else if (acc.nativeCurrency === 'EUR') {
-        bs += convertValue(acc.balanceNative, 'EUR', 'VES', activeRate);
+        bs += convertValue(acc.balanceNative || 0, 'EUR', 'VES', activeRate);
       }
     });
 
@@ -787,7 +794,7 @@ export default function App() {
                     justUpdated={justUpdatedBankId === acc.id}
                     delta={cardDeltas[acc.id] || null}
                     onSync={handleSyncSingleBank}
-                    onEditBalance={setEditingAccount}
+                    onEditBalance={isBinanceAcc ? undefined : setEditingAccount}
                   />
                 );
               })

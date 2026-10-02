@@ -127,7 +127,11 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
-            <div className="text-3xl sm:text-4xl font-black font-mono text-emerald-400 tabular-nums tracking-tight leading-none">
+            <div
+              className={`text-3xl sm:text-4xl font-black font-mono tabular-nums tracking-tight leading-none ${
+                totalForeign < -0.00001 ? 'text-rose-400' : 'text-emerald-400'
+              }`}
+            >
               {hideBalances ? '$ ****' : formatUSD(totalForeign)}
             </div>
           </div>
@@ -161,7 +165,11 @@ export const SummaryHeader: React.FC<SummaryHeaderProps> = ({
         </div>
 
         {/* Monto en Bolívares */}
-        <div className="text-sm sm:text-base font-medium font-mono text-slate-400 tabular-nums tracking-tight mt-1.5">
+        <div
+          className={`text-sm sm:text-base font-medium font-mono tabular-nums tracking-tight mt-1.5 ${
+            totalBs < -0.00001 ? 'text-rose-400/90' : 'text-slate-400'
+          }`}
+        >
           {hideBalances ? 'Bs. ****' : formatBs(totalBs)}
         </div>
       </div>

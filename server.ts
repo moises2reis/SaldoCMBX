@@ -24,8 +24,36 @@ const RATES_APPSCRIPT_URL =
 function parseAmount(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  let str = String(val).trim().replace(/Bs\.?/gi, '').replace(/\$/g, '').replace(/€/g, '').trim();
+  let str = String(val).trim();
   if (!str) return 0;
+
+  // Detectar formato negativo:
+  // - Formato contable entre paréntesis: (1500,50), ($50), (Bs. 1.234,56)
+  // - Signo menos estándar o variantes unicode: -1500, −1500, –1500, —1500, - 1500, -$50, Bs. -1500
+  // - Signo menos al final: 1500-
+  const isParenthesesNegative = /^\s*\(.*?\)\s*$/.test(str);
+  const hasMinusSign = /[−–—-]\s*[\d$€]|[\d$€]\s*[−–—-]/.test(str) || str.includes('-') || str.includes('−') || str.includes('–');
+  const isNegative = isParenthesesNegative || hasMinusSign;
+
+  str = str
+    .replace(/[()]/g, '')
+    .replace(/Bs\.?/gi, '')
+    .replace(/\$/g, '')
+    .replace(/€/g, '')
+    .replace(/[−–—]/g, '-')
+    .replace(/-\s+/g, '-')
+    .replace(/\s+/g, '')
+    .trim();
+
+  if (str.endsWith('-')) {
+    str = '-' + str.slice(0, -1);
+  }
+
+  const sign = (isNegative || str.startsWith('-')) ? -1 : 1;
+  str = str.replace(/-/g, '');
+
+  if (!str) return 0;
+
   if (str.includes(',') && str.includes('.')) {
     if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
       str = str.replace(/\./g, '').replace(',', '.');
@@ -40,8 +68,10 @@ function parseAmount(val: unknown): number {
       str = str.replace(/,/g, '');
     }
   }
+
   const parsed = parseFloat(str);
-  return isNaN(parsed) ? 0 : parsed;
+  if (isNaN(parsed)) return 0;
+  return sign * parsed;
 }
 
 interface RawBankRecord {
@@ -274,18 +304,25 @@ async function startServer() {
 
   function parseDateTimestamp(val: unknown): number {
     if (!val) return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
     const str = String(val).trim();
     if (!str) return 0;
-    const direct = new Date(str);
-    if (!isNaN(direct.getTime())) return direct.getTime();
 
+    // Si es un timestamp numérico en formato string (10 a 13 dígitos)
+    if (/^\d{10,13}$/.test(str)) {
+      const num = parseInt(str, 10);
+      return str.length === 10 ? num * 1000 : num;
+    }
+
+    // Formato DD/MM/YYYY o DD-MM-YYYY (debe evaluarse ANTES de new Date(str))
     const dmyMatch = str.match(
-      /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s*[, ]\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)?/i
+      /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s*[, ]\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)?/i
     );
     if (dmyMatch) {
       const day = parseInt(dmyMatch[1], 10);
       const month = parseInt(dmyMatch[2], 10) - 1;
-      const year = parseInt(dmyMatch[3], 10);
+      let year = parseInt(dmyMatch[3], 10);
+      if (year < 100) year += year < 50 ? 2000 : 1900;
       let hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
       const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
       const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
@@ -294,9 +331,15 @@ async function startServer() {
       if (ampm === 'pm' && hour < 12) hour += 12;
       else if (ampm === 'am' && hour === 12) hour = 0;
 
-      const customDate = new Date(year, month, day, hour, min, sec);
-      if (!isNaN(customDate.getTime())) return customDate.getTime();
+      if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+        const customDate = new Date(year, month, day, hour, min, sec);
+        if (!isNaN(customDate.getTime())) return customDate.getTime();
+      }
     }
+
+    const direct = new Date(str);
+    if (!isNaN(direct.getTime())) return direct.getTime();
+
     return 0;
   }
 
@@ -577,7 +620,7 @@ async function startServer() {
 
     const isForceRefresh = req.query.fresh === 'true' || req.query.force === 'true';
     const isCacheWarm =
-      cachedAccounts.some((a) => a.balanceNative > 0 || (a.montoUsd && a.montoUsd > 0)) &&
+      cachedAccounts.some((a) => (a.balanceNative !== undefined && a.balanceNative !== 0) || (a.montoUsd !== undefined && a.montoUsd !== 0)) &&
       lastFetchTimestamp > 0 &&
       Date.now() - lastFetchTimestamp < 45000;
 

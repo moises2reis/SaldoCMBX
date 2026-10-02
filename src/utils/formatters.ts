@@ -95,6 +95,9 @@ export function formatShortDate(val?: string): string {
 export function formatBs(amount: number): string {
   const val = isNaN(amount) || amount === null || amount === undefined ? 0 : amount;
   if (Math.abs(val) < 0.00001) return '-';
+  if (val < 0) {
+    return `-Bs. ${formatAmountNumber(Math.abs(val), 2)}`;
+  }
   return `Bs. ${formatAmountNumber(val, 2)}`;
 }
 
@@ -102,6 +105,9 @@ export function formatForeign(amount: number, currency: ForeignCurrency = 'USD')
   const symbol = currency === 'EUR' ? '€' : '$';
   const val = isNaN(amount) || amount === null || amount === undefined ? 0 : amount;
   if (Math.abs(val) < 0.00001) return '-';
+  if (val < 0) {
+    return `-${symbol} ${formatAmountNumber(Math.abs(val), 2)}`;
+  }
   return `${symbol} ${formatAmountNumber(val, 2)}`;
 }
 
@@ -143,6 +149,9 @@ export function calculateAccountUsd(
     const amountBs = convertValue(account.balanceNative || 0, 'EUR', 'VES', activeRate);
     return activeRate > 0 ? amountBs / activeRate : 0;
   } else {
+    if ((account.balanceNative === 0 || account.balanceNative === undefined) && account.montoUsd !== undefined && account.montoUsd !== 0) {
+      return account.montoUsd;
+    }
     return activeRate > 0 ? (account.balanceNative || 0) / activeRate : 0;
   }
 }
@@ -150,8 +159,36 @@ export function calculateAccountUsd(
 export function parseAmount(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
-  let str = String(val).trim().replace(/Bs\.?/gi, '').replace(/\$/g, '').replace(/€/g, '').trim();
+  let str = String(val).trim();
   if (!str) return 0;
+
+  // Detectar formato negativo:
+  // - Formato contable entre paréntesis: (1500,50), ($50), (Bs. 1.234,56)
+  // - Signo menos estándar o variantes unicode: -1500, −1500, –1500, —1500, - 1500, -$50, Bs. -1500
+  // - Signo menos al final: 1500-
+  const isParenthesesNegative = /^\s*\(.*?\)\s*$/.test(str);
+  const hasMinusSign = /[−–—-]\s*[\d$€]|[\d$€]\s*[−–—-]/.test(str) || str.includes('-') || str.includes('−') || str.includes('–');
+  const isNegative = isParenthesesNegative || hasMinusSign;
+
+  str = str
+    .replace(/[()]/g, '')
+    .replace(/Bs\.?/gi, '')
+    .replace(/\$/g, '')
+    .replace(/€/g, '')
+    .replace(/[−–—]/g, '-')
+    .replace(/-\s+/g, '-')
+    .replace(/\s+/g, '')
+    .trim();
+
+  if (str.endsWith('-')) {
+    str = '-' + str.slice(0, -1);
+  }
+
+  const sign = (isNegative || str.startsWith('-')) ? -1 : 1;
+  str = str.replace(/-/g, '');
+
+  if (!str) return 0;
+
   if (str.includes(',') && str.includes('.')) {
     if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
       str = str.replace(/\./g, '').replace(',', '.');
@@ -166,8 +203,10 @@ export function parseAmount(val: unknown): number {
       str = str.replace(/,/g, '');
     }
   }
+
   const parsed = parseFloat(str);
-  return isNaN(parsed) ? 0 : parsed;
+  if (isNaN(parsed)) return 0;
+  return sign * parsed;
 }
 
 export function parseFlexibleDate(val: unknown): Date | null {
@@ -180,20 +219,24 @@ export function parseFlexibleDate(val: unknown): Date | null {
   const str = String(val).trim();
   if (!str) return null;
 
-  // Intentar parse directo (ISO, etc.)
-  const direct = new Date(str);
-  if (!isNaN(direct.getTime())) {
-    return direct;
+  // Si es un timestamp numérico en formato string (10 a 13 dígitos)
+  if (/^\d{10,13}$/.test(str)) {
+    const num = parseInt(str, 10);
+    const d = new Date(str.length === 10 ? num * 1000 : num);
+    if (!isNaN(d.getTime())) return d;
   }
 
-  // Formato DD/MM/YYYY o DD-MM-YYYY (con hora HH:mm:ss y posible AM/PM o a.m./p.m.)
+  // Formato DD/MM/YYYY o DD-MM-YYYY (con hora opcional HH:mm:ss y AM/PM o a.m./p.m.)
+  // CRÍTICO: Debe evaluarse ANTES de new Date(str), porque los navegadores y Node.js interpretan
+  // por defecto las fechas con barras (ej: "02/10/2026") como MM/DD/YYYY (10 de febrero en vez de 2 de octubre).
   const dmyMatch = str.match(
-    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s*[, ]\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)?/i
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s*[, ]\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)?/i
   );
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
     const month = parseInt(dmyMatch[2], 10) - 1;
-    const year = parseInt(dmyMatch[3], 10);
+    let year = parseInt(dmyMatch[3], 10);
+    if (year < 100) year += year < 50 ? 2000 : 1900;
     let hour = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
     const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
     const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
@@ -205,8 +248,16 @@ export function parseFlexibleDate(val: unknown): Date | null {
       hour = 0;
     }
 
-    const customDate = new Date(year, month, day, hour, min, sec);
-    if (!isNaN(customDate.getTime())) return customDate;
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      const customDate = new Date(year, month, day, hour, min, sec);
+      if (!isNaN(customDate.getTime())) return customDate;
+    }
+  }
+
+  // Intentar parse directo (formatos ISO 8601 YYYY-MM-DDTHH:mm:ssZ, etc.)
+  const direct = new Date(str);
+  if (!isNaN(direct.getTime())) {
+    return direct;
   }
 
   return null;

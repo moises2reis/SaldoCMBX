@@ -103,6 +103,9 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   };
 
   const handleCardClick = () => {
+    if (isBinance) {
+      return; // No abrir ninguna ventana para la tarjeta de Binance
+    }
     if (onEditBalance) {
       onEditBalance(account);
     }
@@ -111,15 +114,21 @@ export const BankListItem: React.FC<BankListItemProps> = ({
   return (
     <div
       onClick={handleCardClick}
-      role="button"
-      tabIndex={0}
-      title="Toca para actualizar (Macro o Manual)"
-      className={`relative overflow-hidden rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all duration-300 flex items-center justify-between gap-3 shadow-sm select-none group cursor-pointer ${
+      role={isBinance ? undefined : 'button'}
+      tabIndex={isBinance ? -1 : 0}
+      title={isBinance ? 'Binance' : 'Toca para actualizar (Macro o Manual)'}
+      className={`relative overflow-hidden rounded-2xl px-3.5 py-3 sm:px-4 sm:py-3.5 transition-all duration-300 flex items-center justify-between gap-3 shadow-sm select-none group ${
+        isBinance
+          ? 'cursor-default'
+          : 'cursor-pointer active:scale-[0.985] active:brightness-95'
+      } ${
         isSyncing
           ? 'bg-slate-900 border-amber-500/60 ring-1 ring-amber-500/50 shadow-lg shadow-amber-500/10'
           : justUpdated
           ? 'bg-slate-900 border-emerald-500/70 ring-1 ring-emerald-500/50 shadow-lg shadow-emerald-500/15'
-          : 'bg-slate-900/80 hover:bg-slate-900 active:bg-slate-800/90 active:scale-[0.985] active:brightness-95 border border-slate-800/80 hover:border-slate-700'
+          : isBinance
+          ? 'bg-slate-900/80 border border-slate-800/80'
+          : 'bg-slate-900/80 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700'
       }`}
     >
       {/* Barra animada de escaneo superior cuando la macro está actualizando */}
@@ -195,23 +204,31 @@ export const BankListItem: React.FC<BankListItemProps> = ({
           </div>
         ) : isEfectivo ? (
           <>
-            {/* Tarjeta Efectivo: Total en $ en VERDE con superposición flotante a la izquierda */}
+            {/* Tarjeta Efectivo: Total en $ con superposición flotante a la izquierda */}
             <div className="relative inline-flex items-center justify-end">
               {renderDeltaBadge()}
-              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+              <div
+                className={`text-sm sm:text-base font-bold font-mono tabular-nums leading-tight ${
+                  amountUsd < -0.00001 ? 'text-rose-400' : 'text-emerald-400'
+                }`}
+              >
                 {hideBalances ? '$ ****' : formatUSD(amountUsd)}
               </div>
             </div>
 
-            {/* Tarjeta Efectivo: Debajo en GRIS y más pequeño los montos en $ y Bs individuales */}
-            <div className="text-[10px] sm:text-[11px] font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5 flex items-center justify-end gap-1.5">
+            {/* Tarjeta Efectivo: Debajo en GRIS (o rojo si negativo) y más pequeño los montos en $ y Bs individuales */}
+            <div className="text-[10px] sm:text-[11px] font-medium font-mono tabular-nums leading-tight mt-0.5 flex items-center justify-end gap-1.5">
               {hideBalances ? (
-                <span>$ **** · Bs. ****</span>
+                <span className="text-slate-400">$ **** · Bs. ****</span>
               ) : (
                 <>
-                  <span>{formatUSD(cashUsd)}</span>
+                  <span className={cashUsd < -0.00001 ? 'text-rose-400/90' : 'text-slate-400'}>
+                    {formatUSD(cashUsd)}
+                  </span>
                   <span className="text-slate-600">·</span>
-                  <span>{formatBs(cashBs)}</span>
+                  <span className={cashBs < -0.00001 ? 'text-rose-400/90' : 'text-slate-400'}>
+                    {formatBs(cashBs)}
+                  </span>
                 </>
               )}
             </div>
@@ -221,13 +238,21 @@ export const BankListItem: React.FC<BankListItemProps> = ({
             {/* Monto en Dólares con superposición flotante a la izquierda */}
             <div className="relative inline-flex items-center justify-end">
               {renderDeltaBadge()}
-              <div className="text-sm sm:text-base font-bold font-mono text-emerald-400 tabular-nums leading-tight">
+              <div
+                className={`text-sm sm:text-base font-bold font-mono tabular-nums leading-tight ${
+                  amountUsd < -0.00001 ? 'text-rose-400' : 'text-emerald-400'
+                }`}
+              >
                 {hideBalances ? '$ ****' : formatUSD(amountUsd)}
               </div>
             </div>
 
-            {/* Monto en Bolívares (Original: siempre Gris) */}
-            <div className="text-[11px] sm:text-xs font-medium font-mono text-slate-400 tabular-nums leading-tight mt-0.5">
+            {/* Monto en Bolívares */}
+            <div
+              className={`text-[11px] sm:text-xs font-medium font-mono tabular-nums leading-tight mt-0.5 ${
+                amountBs < -0.00001 ? 'text-rose-400/90' : 'text-slate-400'
+              }`}
+            >
               {hideBalances ? 'Bs. ****' : formatBs(amountBs)}
             </div>
           </>

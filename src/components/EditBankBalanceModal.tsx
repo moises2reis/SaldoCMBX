@@ -4,6 +4,7 @@ import {
   formatSmartUpdateTime,
   isOlderThanOneHourAndHalf,
   formatFullDateTime,
+  parseAmount,
 } from '../utils/formatters';
 import {
   X,
@@ -44,40 +45,44 @@ const formatSpanishNumber = (num: number): string => {
 
 const parseSpanishNumber = (str: string): number => {
   if (!str) return 0;
-  const clean = str.replace(/\./g, '').replace(/,/g, '.').trim();
-  const num = parseFloat(clean);
-  return isNaN(num) ? 0 : num;
+  return parseAmount(str);
 };
 
-// Formateo dinámico al escribir
+// Formateo dinámico al escribir (con soporte para signo negativo)
 const formatInputValue = (inputVal: string): string => {
   if (!inputVal) return '';
-  if (/[^\d.,]/.test(inputVal)) return inputVal;
+  const isNeg = inputVal.startsWith('-');
+  const cleanVal = isNeg ? inputVal.slice(1) : inputVal;
+  if (/[^\d.,]/.test(cleanVal)) return inputVal;
 
-  const endsWithSeparator = inputVal.endsWith(',') || inputVal.endsWith('.');
+  const endsWithSeparator = cleanVal.endsWith(',') || cleanVal.endsWith('.');
 
-  if (inputVal.includes(',')) {
-    const [intPart, ...decParts] = inputVal.split(',');
+  let formatted = '';
+  if (cleanVal.includes(',')) {
+    const [intPart, ...decParts] = cleanVal.split(',');
     const cleanInt = intPart.replace(/\D/g, '');
     const cleanDec = decParts.join('').replace(/\D/g, '').slice(0, 4);
     const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
     if (endsWithSeparator && cleanDec === '') {
-      return `${formattedInt || '0'},`;
-    }
-    return cleanDec !== '' ? `${formattedInt || '0'},${cleanDec}` : formattedInt;
-  } else if (inputVal.includes('.')) {
-    if (endsWithSeparator) {
-      const cleanInt = inputVal.slice(0, -1).replace(/\D/g, '');
-      const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
-      return `${formattedInt || '0'},`;
+      formatted = `${formattedInt || '0'},`;
     } else {
-      const cleanInt = inputVal.replace(/\D/g, '');
-      return cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+      formatted = cleanDec !== '' ? `${formattedInt || '0'},${cleanDec}` : formattedInt;
+    }
+  } else if (cleanVal.includes('.')) {
+    if (endsWithSeparator) {
+      const cleanInt = cleanVal.slice(0, -1).replace(/\D/g, '');
+      const formattedInt = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+      formatted = `${formattedInt || '0'},`;
+    } else {
+      const cleanInt = cleanVal.replace(/\D/g, '');
+      formatted = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
     }
   } else {
-    const cleanInt = inputVal.replace(/\D/g, '');
-    return cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
+    const cleanInt = cleanVal.replace(/\D/g, '');
+    formatted = cleanInt ? new Intl.NumberFormat('de-DE').format(BigInt(cleanInt)) : '';
   }
+
+  return isNeg ? `-${formatted}` : formatted;
 };
 
 export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
@@ -136,11 +141,15 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
 
   if (!isOpen || !account) return null;
 
-  const isEfectivo = account.categoria?.trim().toLowerCase() === 'efectivo';
   const isBinance =
     account.id === 'binance' ||
     account.bankName.toLowerCase().includes('binance') ||
     account.bankShort.toLowerCase().includes('binance');
+
+  // No abrir ninguna ventana para Binance
+  if (isBinance) return null;
+
+  const isEfectivo = account.categoria?.trim().toLowerCase() === 'efectivo';
 
   const timeAgoText = formatSmartUpdateTime(account.lastSync);
   const fullDateTimeText = formatFullDateTime(account.lastSync);
@@ -153,7 +162,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
     setter: (val: string) => void
   ) => {
     const val = e.target.value;
-    if (val && /[^\d.,]/.test(val)) return;
+    if (val && /[^\d.,-]/.test(val)) return;
     setter(formatInputValue(val));
   };
 
@@ -183,7 +192,7 @@ export const EditBankBalanceModal: React.FC<EditBankBalanceModalProps> = ({
         await onSave(bankNameToSend, numBs, account.id, numUsd);
       } else {
         const num = parseSpanishNumber(balanceInput);
-        if (num < 0) return;
+        if (isNaN(num)) return;
         await onSave(bankNameToSend, num, account.id);
       }
 
